@@ -44,8 +44,8 @@ button:hover { background: rgba(0,0,0,0.14); }
   <input type="text" id="txt" value="BEAD" maxlength="8" placeholder="type here…">
   <div class="row">
     <span>size</span>
-    <input type="range" id="sl-size" min="6" max="32" value="14">
-    <span id="vl-size">14</span>
+    <input type="range" id="sl-size" min="6" max="32" value="10">
+    <span id="vl-size">10</span>
   </div>
   <div class="row">
     <span>gap</span>
@@ -102,14 +102,17 @@ function adjustColor(color, amt) {
 }
 
 function drawBead(x, y, r, color) {
-  // table shadow - soft ellipse below bead
+  // table shadow - radial gradient ellipse (no filter for performance)
   ctx.save();
+  const sg2 = ctx.createRadialGradient(x + r*0.15, y + r*0.9, 0, x + r*0.15, y + r*0.9, r*0.75);
+  sg2.addColorStop(0, 'rgba(0,0,0,0.22)');
+  sg2.addColorStop(0.5, 'rgba(0,0,0,0.08)');
+  sg2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.scale(1, 0.35);
   ctx.beginPath();
-  ctx.ellipse(x + r*0.15, y + r*0.85, r*0.7, r*0.22, 0, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  ctx.filter = 'blur(' + (r*0.4) + 'px)';
+  ctx.arc(x + r*0.15, (y + r*0.9) / 0.35, r*0.75, 0, Math.PI*2);
+  ctx.fillStyle = sg2;
   ctx.fill();
-  ctx.filter = 'none';
   ctx.restore();
 
   // main body gradient
@@ -193,7 +196,7 @@ let rafId = null;
 
 function getBeadPositions(text, beadR, gap) {
   if (!font) return [];
-  const step = beadR * 1.85 + gap;
+  const step = beadR * 1.62 + gap;
   const fontSize = beadR * 13;
   const path = font.getPath(text, 0, 0, fontSize);
   const bb = path.getBoundingBox();

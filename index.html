@@ -195,25 +195,35 @@ let physicsActive = false;
 let rafId = null;
 
 function getBeadPositions(text, beadR, gap) {
-  if (!font) return [];
   const step = beadR * 1.5 + gap;
-  const fontSize = beadR * 13;
-  const path = font.getPath(text, 0, 0, fontSize);
-  const bb = path.getBoundingBox();
-  const tw = bb.x2 - bb.x1;
-  const th = bb.y2 - bb.y1;
-  const ox = (W - tw) / 2 - bb.x1;
-  const oy = (H - th) / 2 - bb.y1;
-
   const ofc = document.createElement('canvas');
   ofc.width = W; ofc.height = H;
   const oCtx = ofc.getContext('2d');
-  const p2d = new Path2D(path.toPathData(2));
-  oCtx.save();
-  oCtx.translate(ox, oy);
-  oCtx.fillStyle = '#fff';
-  oCtx.fill(p2d);
-  oCtx.restore();
+
+  // use uploaded font or fall back to system bold font
+  const fontSize = Math.min(W, H) * 0.55;
+  if (font) {
+    // opentype path rendering
+    const path = font.getPath(text, 0, 0, fontSize);
+    const bb = path.getBoundingBox();
+    const tw = bb.x2 - bb.x1;
+    const th = bb.y2 - bb.y1;
+    const ox = (W - tw) / 2 - bb.x1;
+    const oy = (H - th) / 2 - bb.y1;
+    const p2d = new Path2D(path.toPathData(2));
+    oCtx.save();
+    oCtx.translate(ox, oy);
+    oCtx.fillStyle = '#fff';
+    oCtx.fill(p2d);
+    oCtx.restore();
+  } else {
+    // fallback: Canvas 2D text (no font file needed)
+    oCtx.fillStyle = '#fff';
+    oCtx.font = 'bold ' + fontSize + 'px Arial, Helvetica, sans-serif';
+    oCtx.textAlign = 'center';
+    oCtx.textBaseline = 'middle';
+    oCtx.fillText(text, W / 2, H / 2);
+  }
 
   const imgData = oCtx.getImageData(0, 0, W, H).data;
   const pts = [];
@@ -353,9 +363,10 @@ document.getElementById('font-upload').addEventListener('change', function(e) {
   reader.readAsArrayBuffer(file);
 });
 
-// init
+// init - build immediately with fallback, reload when font arrives
+buildBeads();
 opentype.load(FONT_URL, function(err, f) {
-  if (err) { console.error('font load failed', err); return; }
+  if (err) { console.warn('font load failed, using system font'); return; }
   font = f;
   buildBeads();
 });

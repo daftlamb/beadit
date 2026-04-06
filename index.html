@@ -7,34 +7,35 @@
 <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #f0ece4; overflow: hidden; font-family: sans-serif; }
+body { background: #e8e4dc; overflow: hidden; font-family: sans-serif; }
 canvas { display: block; }
 #ui {
   position: fixed; top: 20px; left: 50%;
   transform: translateX(-50%);
   display: flex; flex-direction: column; gap: 10px;
   align-items: center;
-  background: rgba(255,255,255,0.78);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0,0,0,0.1);
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(0,0,0,0.08);
   border-radius: 16px;
   padding: 16px 20px;
   min-width: 280px;
   z-index: 100;
 }
 #ui input[type=text] {
-  background: rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.15);
+  background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.12);
   color: #222; padding: 8px 12px; border-radius: 8px; font-size: 18px;
   width: 220px; outline: none; text-align: center; letter-spacing: 4px;
 }
-.row { display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,0.5); font-size: 12px; width: 100%; }
-.row input[type=range] { flex: 1; accent-color: #555; }
-select { background: #fff; color: #222; border: 1px solid rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
-button { background: rgba(0,0,0,0.07); border: 1px solid rgba(0,0,0,0.15); color: #222; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
-button:hover { background: rgba(0,0,0,0.14); }
+.row { display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,0.45); font-size: 12px; width: 100%; }
+.row input[type=range] { flex: 1; accent-color: #666; }
+select { background: #fff; color: #222; border: 1px solid rgba(0,0,0,0.18); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+button { background: rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.12); color: #222; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+button:hover { background: rgba(0,0,0,0.12); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-#hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: rgba(0,0,0,0.3); font-size: 12px; pointer-events: none; }
-#font-name { color: rgba(0,0,0,0.35); font-size: 11px; }
+#hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: rgba(0,0,0,0.28); font-size: 12px; pointer-events: none; text-align: center; }
+#font-name { color: rgba(0,0,0,0.32); font-size: 11px; }
+#warn { color: #c0392b; font-size: 11px; display: none; }
 </style>
 </head>
 <body>
@@ -43,8 +44,8 @@ button:hover { background: rgba(0,0,0,0.14); }
   <input type="text" id="txt" value="BEAD" maxlength="8">
   <div class="row">
     <span>size</span>
-    <input type="range" id="sl-size" min="3" max="28" value="9">
-    <span id="vl-size">9</span>
+    <input type="range" id="sl-size" min="6" max="40" value="14">
+    <span id="vl-size">14</span>
   </div>
   <div class="row">
     <span>density</span>
@@ -53,22 +54,23 @@ button:hover { background: rgba(0,0,0,0.14); }
   </div>
   <div class="row">
     <span>jitter</span>
-    <input type="range" id="sl-jitter" min="0" max="12" value="3">
-    <span id="vl-jitter">3</span>
+    <input type="range" id="sl-jitter" min="0" max="14" value="4">
+    <span id="vl-jitter">4</span>
   </div>
   <div class="row">
     <span>palette</span>
     <select id="sel-palette">
-      <option value="rainbow">rainbow</option>
-      <option value="pastel">pastel</option>
-      <option value="mono">mono</option>
-      <option value="gold">gold</option>
+      <option value="crystal">crystal</option>
+      <option value="ruby">ruby</option>
+      <option value="jade">jade</option>
+      <option value="amber">amber</option>
+      <option value="pearl">pearl</option>
       <option value="neon">neon</option>
     </select>
     <span>shape</span>
     <select id="sel-shape">
+      <option value="sphere">sphere</option>
       <option value="mix">mix</option>
-      <option value="circle">circle</option>
       <option value="diamond">diamond</option>
       <option value="star">star</option>
       <option value="hex">hex</option>
@@ -76,254 +78,382 @@ button:hover { background: rgba(0,0,0,0.14); }
   </div>
   <div class="btn-row">
     <button id="btn-reset">reset</button>
+    <button id="btn-phys" title="toggle physics">physics ●</button>
     <button id="btn-export">save</button>
     <button id="btn-font">font</button>
     <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
   </div>
+  <div id="warn">⚠ too many beads — increase size or lower density</div>
   <div id="font-name"></div>
 </div>
-<div id="hint">click canvas to reshuffle</div>
-
+<div id="hint">tilt device or click to shake · click canvas to reshuffle</div>
 <script>
 const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-900-normal.woff';
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W, H, font = null, beads = [], seed = 42;
+let W, H, font = null, seed = 42;
+let physicsOn = true;
+let animId = null;
+
+// ── palettes ──────────────────────────────────────────────
+const PALETTES = {
+  crystal: () => { const h=Math.random()*360; return [h, 55+Math.random()*20, 62+Math.random()*18]; },
+  ruby:    () => [340+Math.random()*30, 70+Math.random()*20, 45+Math.random()*20],
+  jade:    () => [130+Math.random()*40, 50+Math.random()*25, 42+Math.random()*22],
+  amber:   () => [30+Math.random()*25, 75+Math.random()*15, 50+Math.random()*18],
+  pearl:   () => [200+Math.random()*60, 15+Math.random()*20, 72+Math.random()*18],
+  neon:    () => { const h=Math.random()*360; return [h, 90, 58]; }
+};
+
+function getColor(palette) {
+  const [h,s,l] = PALETTES[palette]();
+  return { h, s, l,
+    base: `hsl(${h},${s}%,${l}%)`,
+    light: `hsl(${h},${Math.max(0,s-15)}%,${Math.min(100,l+28)}%)`,
+    dark:  `hsl(${h},${Math.min(100,s+10)}%,${Math.max(0,l-22)}%)`,
+    inner: `hsla(${h},${s}%,${Math.min(100,l+40)}%,0.55)`
+  };
+}
 
 // seeded random
-function sr(s) { const x = Math.sin(s+1)*43758.5453; return x - Math.floor(x); }
+function sr(s) { const x=Math.sin(s+1)*43758.5453; return x-Math.floor(x); }
 
-// per-bead random color from palette
-const HUE_RANGES = {
-  rainbow: () => Math.random()*360,
-  pastel:  () => Math.random()*360,
-  mono:    () => 210 + Math.random()*30,
-  gold:    () => 35 + Math.random()*25,
-  neon:    () => Math.random()*360
-};
-const SAT = { rainbow:55, pastel:40, mono:22, gold:75, neon:85 };
-const LIT = { rainbow:58, pastel:72, mono:52, gold:55, neon:55 };
-function randColor(palette) {
-  return `hsl(${HUE_RANGES[palette]()},${SAT[palette]}%,${LIT[palette]}%)`;
-}
-
-function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; build(); }
+function resize() { W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; rebuild(); }
 window.addEventListener('resize', resize);
 
-// rasterize text to offscreen canvas
+// ── rasterize text ────────────────────────────────────────
 function rasterize(text) {
-  const ofc = document.createElement('canvas');
-  ofc.width = W; ofc.height = H;
-  const oc = ofc.getContext('2d');
-  const chars = Math.max(text.length, 1);
-
+  const ofc=document.createElement('canvas');
+  ofc.width=W; ofc.height=H;
+  const oc=ofc.getContext('2d');
+  const chars=Math.max(text.length,1);
   if (font) {
-    let fontSize = Math.min(W * 0.82 / chars * 1.5, H * 0.62);
-    const path = font.getPath(text, 0, 0, fontSize);
-    const bb = path.getBoundingBox();
-    const scale = Math.min((W*0.88)/(bb.x2-bb.x1), (H*0.65)/(bb.y2-bb.y1));
-    fontSize *= scale;
-    const p2 = font.getPath(text, 0, 0, fontSize);
-    const bb2 = p2.getBoundingBox();
-    const ox = (W-(bb2.x2-bb2.x1))/2 - bb2.x1;
-    const oy = (H-(bb2.y2-bb2.y1))/2 - bb2.y1;
-    const d = p2.commands.reduce((s,c) => {
-      if (c.type==='M') return s+`M${c.x+ox},${c.y+oy}`;
-      if (c.type==='L') return s+`L${c.x+ox},${c.y+oy}`;
-      if (c.type==='C') return s+`C${c.x1+ox},${c.y1+oy},${c.x2+ox},${c.y2+oy},${c.x+ox},${c.y+oy}`;
-      if (c.type==='Q') return s+`Q${c.x1+ox},${c.y1+oy},${c.x+ox},${c.y+oy}`;
-      if (c.type==='Z') return s+'Z'; return s;
-    }, '');
-    oc.fillStyle = '#fff';
-    oc.fill(new Path2D(d));
+    let fs=Math.min(W*0.82/chars*1.5, H*0.62);
+    const path=font.getPath(text,0,0,fs);
+    const bb=path.getBoundingBox();
+    const sc=Math.min((W*0.88)/(bb.x2-bb.x1),(H*0.65)/(bb.y2-bb.y1));
+    fs*=sc;
+    const p2=font.getPath(text,0,0,fs);
+    const bb2=p2.getBoundingBox();
+    const ox=(W-(bb2.x2-bb2.x1))/2-bb2.x1;
+    const oy=(H-(bb2.y2-bb2.y1))/2-bb2.y1;
+    const d=p2.commands.reduce((s,c)=>{
+      if(c.type==='M') return s+`M${c.x+ox},${c.y+oy}`;
+      if(c.type==='L') return s+`L${c.x+ox},${c.y+oy}`;
+      if(c.type==='C') return s+`C${c.x1+ox},${c.y1+oy},${c.x2+ox},${c.y2+oy},${c.x+ox},${c.y+oy}`;
+      if(c.type==='Q') return s+`Q${c.x1+ox},${c.y1+oy},${c.x+ox},${c.y+oy}`;
+      if(c.type==='Z') return s+'Z'; return s;
+    },'');
+    oc.fillStyle='#fff'; oc.fill(new Path2D(d));
   } else {
-    const fs = Math.min(W*0.75/chars*1.4, H*0.6);
-    oc.font = `900 ${fs}px Arial Black, Arial, sans-serif`;
-    oc.textAlign = 'center'; oc.textBaseline = 'middle';
-    oc.fillStyle = '#fff';
-    oc.fillText(text, W/2, H/2);
+    const fs=Math.min(W*0.75/chars*1.4,H*0.6);
+    oc.font=`900 ${fs}px Arial Black,Arial,sans-serif`;
+    oc.textAlign='center'; oc.textBaseline='middle';
+    oc.fillStyle='#fff'; oc.fillText(text,W/2,H/2);
   }
-  return oc.getImageData(0, 0, W, H);
+  return oc.getImageData(0,0,W,H);
 }
 
-// Zhang-Suen thinning at SCALE=2 downsampled resolution
+// ── Zhang-Suen skeleton at SCALE=2 ───────────────────────
 function extractSkeleton(imgData, spacing) {
-  const SW = imgData.width, SH = imgData.height;
-  const SC = 2;
-  const w = Math.ceil(SW/SC), h = Math.ceil(SH/SC);
-  const data = imgData.data;
-
-  // build downsampled binary grid
-  const grid = new Uint8Array(w*h);
-  for (let y=0; y<h; y++) {
-    for (let x=0; x<w; x++) {
-      const sx = Math.min(x*SC, SW-1), sy = Math.min(y*SC, SH-1);
-      grid[y*w+x] = data[(sy*SW+sx)*4+3] > 128 ? 1 : 0;
+  const SW=imgData.width, SH=imgData.height, SC=2;
+  const w=Math.ceil(SW/SC), h=Math.ceil(SH/SC);
+  const data=imgData.data;
+  const grid=new Uint8Array(w*h);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
+    const sx=Math.min(x*SC,SW-1), sy=Math.min(y*SC,SH-1);
+    grid[y*w+x]=data[(sy*SW+sx)*4+3]>128?1:0;
+  }
+  function nb(x,y){return(x<0||y<0||x>=w||y>=h)?0:grid[y*w+x];}
+  let changed=true;
+  while(changed){
+    changed=false;
+    for(let pass=0;pass<2;pass++){
+      const rem=[];
+      for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++){
+        if(!grid[y*w+x]) continue;
+        const p2=nb(x,y-1),p3=nb(x+1,y-1),p4=nb(x+1,y),p5=nb(x+1,y+1),
+              p6=nb(x,y+1),p7=nb(x-1,y+1),p8=nb(x-1,y),p9=nb(x-1,y-1);
+        const B=p2+p3+p4+p5+p6+p7+p8+p9;
+        if(B<2||B>6) continue;
+        const A=(p2===0&&p3===1?1:0)+(p3===0&&p4===1?1:0)+(p4===0&&p5===1?1:0)+
+                (p5===0&&p6===1?1:0)+(p6===0&&p7===1?1:0)+(p7===0&&p8===1?1:0)+
+                (p8===0&&p9===1?1:0)+(p9===0&&p2===1?1:0);
+        if(A!==1) continue;
+        if(pass===0){if(p2*p4*p6!==0||p4*p6*p8!==0) continue;}
+        else        {if(p2*p4*p8!==0||p2*p6*p8!==0) continue;}
+        rem.push(y*w+x);
+      }
+      if(rem.length){changed=true;rem.forEach(i=>{grid[i]=0;});}
     }
   }
-
-  // Zhang-Suen thinning
-  function nb(x,y) { return (x<0||y<0||x>=w||y>=h) ? 0 : grid[y*w+x]; }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let pass=0; pass<2; pass++) {
-      const rem = [];
-      for (let y=1; y<h-1; y++) {
-        for (let x=1; x<w-1; x++) {
-          if (!grid[y*w+x]) continue;
-          const p2=nb(x,y-1), p3=nb(x+1,y-1), p4=nb(x+1,y), p5=nb(x+1,y+1),
-                p6=nb(x,y+1), p7=nb(x-1,y+1), p8=nb(x-1,y), p9=nb(x-1,y-1);
-          const B = p2+p3+p4+p5+p6+p7+p8+p9;
-          if (B<2 || B>6) continue;
-          const A = (p2===0&&p3===1?1:0)+(p3===0&&p4===1?1:0)+(p4===0&&p5===1?1:0)+
-                    (p5===0&&p6===1?1:0)+(p6===0&&p7===1?1:0)+(p7===0&&p8===1?1:0)+
-                    (p8===0&&p9===1?1:0)+(p9===0&&p2===1?1:0);
-          if (A!==1) continue;
-          if (pass===0) { if (p2*p4*p6!==0 || p4*p6*p8!==0) continue; }
-          else          { if (p2*p4*p8!==0 || p2*p6*p8!==0) continue; }
-          rem.push(y*w+x);
-        }
-      }
-      if (rem.length) { changed=true; rem.forEach(i => { grid[i]=0; }); }
-    }
-  }
-
-  // collect skeleton pixels, subsample by spacing
-  const sp = Math.max(1, Math.round(spacing/SC));
-  const pts = [];
-  const used = new Uint8Array(w*h);
-  for (let y=0; y<h; y++) {
-    for (let x=0; x<w; x++) {
-      if (!grid[y*w+x] || used[y*w+x]) continue;
-      pts.push({ x: x*SC + SC/2, y: y*SC + SC/2 });
-      for (let dy=-sp; dy<=sp; dy++) {
-        for (let dx=-sp; dx<=sp; dx++) {
-          const nx=x+dx, ny=y+dy;
-          if (nx>=0&&ny>=0&&nx<w&&ny<h&&dx*dx+dy*dy<=sp*sp) used[ny*w+nx]=1;
-        }
-      }
+  const sp=Math.max(1,Math.round(spacing/SC));
+  const pts=[];
+  const used=new Uint8Array(w*h);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    if(!grid[y*w+x]||used[y*w+x]) continue;
+    pts.push({x:x*SC+SC/2, y:y*SC+SC/2});
+    for(let dy=-sp;dy<=sp;dy++) for(let dx=-sp;dx<=sp;dx++){
+      const nx=x+dx,ny=y+dy;
+      if(nx>=0&&ny>=0&&nx<w&&ny<h&&dx*dx+dy*dy<=sp*sp) used[ny*w+nx]=1;
     }
   }
   return pts;
 }
 
-function build() {
-  const text    = document.getElementById('txt').value || 'BEAD';
+// ── bead data ─────────────────────────────────────────────
+let beads = []; // {x,y,vx,vy,ox,oy,r,color,shape,rot}
+
+// ── build ─────────────────────────────────────────────────
+function rebuild() {
+  if (animId) { cancelAnimationFrame(animId); animId=null; }
+  const text    = document.getElementById('txt').value||'BEAD';
   const beadR   = parseInt(document.getElementById('sl-size').value);
   const density = parseInt(document.getElementById('sl-density').value);
   const jitter  = parseInt(document.getElementById('sl-jitter').value);
   const palette = document.getElementById('sel-palette').value;
   const shape   = document.getElementById('sel-shape').value;
-  // density 1=sparse, 10=dense
-  const spacing = Math.max(beadR*2, beadR * (3.0 - density*0.18));
+  const spacing = Math.max(beadR*2, beadR*(3.0-density*0.18));
 
   const imgData = rasterize(text);
   const pts = extractSkeleton(imgData, spacing);
 
-  const shapes = ['circle','diamond','star','hex','circle','circle'];
-  beads = pts.map((p, i) => {
+  const warn = document.getElementById('warn');
+  warn.style.display = pts.length > 350 ? 'block' : 'none';
+
+  const shapes = ['sphere','diamond','star','hex','sphere','sphere'];
+  beads = pts.map((p,i) => {
     const angle = sr(seed+i*3)*Math.PI*2;
     const dist  = sr(seed+i*3+1)*jitter;
     const rot   = sr(seed+i*7)*Math.PI*2;
+    const col   = getColor(palette);
+    const sh    = shape==='mix' ? shapes[Math.floor(sr(seed+i*11)*shapes.length)] : shape;
     return {
-      x: p.x + Math.cos(angle)*dist,
-      y: p.y + Math.sin(angle)*dist,
-      r: beadR,
-      color: randColor(palette),
-      shape: shape==='mix' ? shapes[Math.floor(sr(seed+i*11)*shapes.length)] : shape,
-      rot
+      x: p.x+Math.cos(angle)*dist,
+      y: p.y+Math.sin(angle)*dist,
+      ox: p.x, oy: p.y,
+      vx: 0, vy: 0,
+      r: beadR, color: col, shape: sh, rot
     };
   });
-  render();
+
+  if (physicsOn) startPhysics();
+  else render();
 }
 
-function drawBead(x, y, r, color, shape, rot) {
-  ctx.save();
-  ctx.translate(x, y);
-  if (shape==='star' || shape==='hex') ctx.rotate(rot);
-  ctx.fillStyle = color;
-  ctx.strokeStyle = 'rgba(255,255,255,0.38)';
-  ctx.lineWidth = 0.7;
+// ── gravity (device tilt or default) ─────────────────────
+let gx = 0, gy = 0.4;
+window.addEventListener('devicemotion', e => {
+  const a = e.accelerationIncludingGravity;
+  if (!a) return;
+  gx = (a.x||0) * 0.04;
+  gy = -(a.y||0) * 0.04;
+});
 
-  if (shape==='circle') {
-    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.arc(-r*0.28,-r*0.3,r*0.25,0,Math.PI*2);
-    ctx.fillStyle='rgba(255,255,255,0.62)'; ctx.fill();
-
-  } else if (shape==='diamond') {
-    ctx.beginPath();
-    ctx.moveTo(0,-r*1.2); ctx.lineTo(r,0); ctx.lineTo(0,r*1.2); ctx.lineTo(-r,0);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0,-r*1.2); ctx.lineTo(r,0); ctx.lineTo(0,-r*0.1);
-    ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.fill();
-
-  } else if (shape==='star') {
-    ctx.beginPath();
-    for (let i=0; i<10; i++) {
-      const a = (i*Math.PI/5)-Math.PI/2;
-      const rad = i%2===0 ? r*1.1 : r*0.45;
-      if (i===0) ctx.moveTo(Math.cos(a)*rad, Math.sin(a)*rad);
-      else ctx.lineTo(Math.cos(a)*rad, Math.sin(a)*rad);
+// ── physics loop ──────────────────────────────────────────
+function startPhysics() {
+  if (animId) cancelAnimationFrame(animId);
+  function tick() {
+    const damp = 0.78, rest = 0.012, bounce = 0.45;
+    for (const b of beads) {
+      b.vx += gx;
+      b.vy += gy;
+      // spring back to origin
+      b.vx += (b.ox - b.x) * rest;
+      b.vy += (b.oy - b.y) * rest;
+      b.vx *= damp;
+      b.vy *= damp;
+      b.x += b.vx;
+      b.y += b.vy;
+      // wall bounce
+      if (b.x-b.r < 0)  { b.x=b.r;  b.vx*=-bounce; }
+      if (b.x+b.r > W)  { b.x=W-b.r; b.vx*=-bounce; }
+      if (b.y-b.r < 0)  { b.y=b.r;  b.vy*=-bounce; }
+      if (b.y+b.r > H)  { b.y=H-b.r; b.vy*=-bounce; }
     }
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-
-  } else if (shape==='hex') {
-    ctx.beginPath();
-    for (let i=0; i<6; i++) {
-      const a = (i/6)*Math.PI*2 - Math.PI/6;
-      if (i===0) ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r);
-      else ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+    // simple bead-bead repulsion (only nearby pairs)
+    for (let i=0;i<beads.length;i++) {
+      for (let j=i+1;j<beads.length;j++) {
+        const a=beads[i], b=beads[j];
+        const dx=b.x-a.x, dy=b.y-a.y;
+        const minD=(a.r+b.r)*0.95;
+        const d2=dx*dx+dy*dy;
+        if (d2<minD*minD && d2>0.001) {
+          const d=Math.sqrt(d2);
+          const push=(minD-d)*0.25/d;
+          a.vx-=dx*push; a.vy-=dy*push;
+          b.vx+=dx*push; b.vy+=dy*push;
+        }
+      }
     }
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0,0);
-    ctx.lineTo(Math.cos(-Math.PI/6)*r, Math.sin(-Math.PI/6)*r);
-    ctx.lineTo(Math.cos(Math.PI/6)*r, Math.sin(Math.PI/6)*r);
-    ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fill();
+    render();
+    animId = requestAnimationFrame(tick);
   }
+  animId = requestAnimationFrame(tick);
+}
+
+// ── glass sphere render ───────────────────────────────────
+function drawSphere(x, y, r, col) {
+  // shadow
+  const shadow = ctx.createRadialGradient(x+r*0.2, y+r*0.3, r*0.1, x+r*0.2, y+r*0.4, r*1.1);
+  shadow.addColorStop(0, 'rgba(0,0,0,0.18)');
+  shadow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.beginPath(); ctx.ellipse(x+r*0.15, y+r*1.05, r*0.85, r*0.28, 0, 0, Math.PI*2);
+  ctx.fillStyle=shadow; ctx.fill();
+
+  // base sphere
+  const grad = ctx.createRadialGradient(x-r*0.3, y-r*0.3, r*0.05, x, y, r);
+  grad.addColorStop(0, col.light);
+  grad.addColorStop(0.45, col.base);
+  grad.addColorStop(1, col.dark);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle=grad; ctx.fill();
+
+  // inner glow (translucency)
+  const inner = ctx.createRadialGradient(x+r*0.1, y+r*0.2, 0, x, y, r*0.85);
+  inner.addColorStop(0, col.inner);
+  inner.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle=inner; ctx.fill();
+
+  // primary specular
+  const spec = ctx.createRadialGradient(x-r*0.32, y-r*0.35, 0, x-r*0.28, y-r*0.28, r*0.48);
+  spec.addColorStop(0, 'rgba(255,255,255,0.92)');
+  spec.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle=spec; ctx.fill();
+
+  // small secondary specular
+  ctx.beginPath(); ctx.arc(x+r*0.28, y+r*0.3, r*0.12, 0, Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.fill();
+
+  // rim light
+  const rim = ctx.createRadialGradient(x, y, r*0.7, x, y, r);
+  rim.addColorStop(0, 'rgba(255,255,255,0)');
+  rim.addColorStop(1, 'rgba(255,255,255,0.12)');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle=rim; ctx.fill();
+}
+
+function drawDiamond(x, y, r, col, rot) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
+  // shadow
+  ctx.beginPath(); ctx.ellipse(0, r*1.1, r*0.7, r*0.2, 0, 0, Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.15)'; ctx.fill();
+  // faces
+  const faces = [
+    {pts:[[0,-r*1.3],[r*0.9,0],[0,-r*0.1]], alpha:0.9},
+    {pts:[[0,-r*1.3],[-r*0.9,0],[0,-r*0.1]], alpha:0.65},
+    {pts:[[r*0.9,0],[0,r*1.3],[0,-r*0.1]], alpha:0.5},
+    {pts:[[-r*0.9,0],[0,r*1.3],[0,-r*0.1]], alpha:0.35}
+  ];
+  faces.forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(f.pts[0][0],f.pts[0][1]);
+    f.pts.slice(1).forEach(p=>ctx.lineTo(p[0],p[1]));
+    ctx.closePath();
+    ctx.fillStyle=`hsla(${col.h},${col.s}%,${col.l+f.alpha*20-10}%,${f.alpha})`;
+    ctx.fill();
+  });
+  // specular
+  ctx.beginPath(); ctx.arc(-r*0.25,-r*0.55,r*0.18,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.fill();
+  ctx.restore();
+}
+
+function drawStar(x, y, r, col, rot) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
+  ctx.beginPath();
+  for(let i=0;i<10;i++){
+    const a=(i*Math.PI/5)-Math.PI/2;
+    const rad=i%2===0?r*1.1:r*0.42;
+    if(i===0) ctx.moveTo(Math.cos(a)*rad,Math.sin(a)*rad);
+    else ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);
+  }
+  ctx.closePath();
+  const g=ctx.createRadialGradient(-r*0.2,-r*0.3,0,0,0,r*1.1);
+  g.addColorStop(0,col.light); g.addColorStop(0.6,col.base); g.addColorStop(1,col.dark);
+  ctx.fillStyle=g; ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=0.8; ctx.stroke();
+  ctx.beginPath(); ctx.arc(-r*0.25,-r*0.3,r*0.2,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.fill();
+  ctx.restore();
+}
+
+function drawHex(x, y, r, col, rot) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
+  ctx.beginPath();
+  for(let i=0;i<6;i++){
+    const a=(i/6)*Math.PI*2-Math.PI/6;
+    if(i===0) ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);
+    else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
+  }
+  ctx.closePath();
+  const g=ctx.createRadialGradient(-r*0.25,-r*0.25,0,0,0,r);
+  g.addColorStop(0,col.light); g.addColorStop(0.5,col.base); g.addColorStop(1,col.dark);
+  ctx.fillStyle=g; ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=0.8; ctx.stroke();
+  ctx.beginPath(); ctx.arc(-r*0.22,-r*0.28,r*0.22,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fill();
   ctx.restore();
 }
 
 function render() {
-  ctx.fillStyle = '#f0ece4';
-  ctx.fillRect(0,0,W,H);
-  for (const b of beads) drawBead(b.x, b.y, b.r, b.color, b.shape, b.rot);
+  ctx.fillStyle='#e8e4dc'; ctx.fillRect(0,0,W,H);
+  for(const b of beads){
+    if(b.shape==='sphere')   drawSphere(b.x,b.y,b.r,b.color);
+    else if(b.shape==='diamond') drawDiamond(b.x,b.y,b.r,b.color,b.rot);
+    else if(b.shape==='star')    drawStar(b.x,b.y,b.r,b.color,b.rot);
+    else if(b.shape==='hex')     drawHex(b.x,b.y,b.r,b.color,b.rot);
+  }
 }
 
+// ── shake ─────────────────────────────────────────────────
+function shake() {
+  beads.forEach(b => { b.vx+=(Math.random()-0.5)*12; b.vy+=(Math.random()-0.5)*12; });
+}
+
+// ── export ────────────────────────────────────────────────
 function exportPNG() {
-  const a = document.createElement('a');
-  a.download = 'beadit.png';
-  a.href = canvas.toDataURL('image/png');
-  a.click();
+  const a=document.createElement('a'); a.download='beadit.png';
+  a.href=canvas.toDataURL('image/png'); a.click();
 }
 
-// events
-document.getElementById('txt').addEventListener('input', build);
-[['sl-size','vl-size'],['sl-density','vl-density'],['sl-jitter','vl-jitter']].forEach(([sid,vid]) => {
-  document.getElementById(sid).addEventListener('input', function() {
-    document.getElementById(vid).textContent = this.value; build();
+// ── events ────────────────────────────────────────────────
+document.getElementById('txt').addEventListener('input', rebuild);
+[['sl-size','vl-size'],['sl-density','vl-density'],['sl-jitter','vl-jitter']].forEach(([sid,vid])=>{
+  document.getElementById(sid).addEventListener('input',function(){
+    document.getElementById(vid).textContent=this.value; rebuild();
   });
 });
-document.getElementById('sel-palette').addEventListener('change', build);
-document.getElementById('sel-shape').addEventListener('change', build);
-document.getElementById('btn-reset').addEventListener('click', () => { document.getElementById('txt').value='BEAD'; build(); });
+document.getElementById('sel-palette').addEventListener('change', rebuild);
+document.getElementById('sel-shape').addEventListener('change', rebuild);
+document.getElementById('btn-reset').addEventListener('click',()=>{document.getElementById('txt').value='BEAD';rebuild();});
 document.getElementById('btn-export').addEventListener('click', exportPNG);
-document.getElementById('btn-font').addEventListener('click', () => document.getElementById('font-upload').click());
-document.getElementById('font-upload').addEventListener('change', function(e) {
-  const file = e.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    try { font = opentype.parse(ev.target.result); document.getElementById('font-name').textContent = file.name; build(); }
-    catch(err) { console.error('font parse failed', err); }
+document.getElementById('btn-font').addEventListener('click',()=>document.getElementById('font-upload').click());
+document.getElementById('btn-phys').addEventListener('click',function(){
+  physicsOn=!physicsOn;
+  this.textContent='physics '+(physicsOn?'●':'○');
+  if(physicsOn) startPhysics(); else { if(animId){cancelAnimationFrame(animId);animId=null;} render(); }
+});
+document.getElementById('font-upload').addEventListener('change',function(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{font=opentype.parse(ev.target.result);document.getElementById('font-name').textContent=file.name;rebuild();}
+    catch(err){console.error('font parse failed',err);}
   };
   reader.readAsArrayBuffer(file);
 });
-canvas.addEventListener('click', () => { seed = Math.floor(Math.random()*99999); build(); });
+canvas.addEventListener('click',()=>{
+  if(physicsOn) shake();
+  else { seed=Math.floor(Math.random()*99999); rebuild(); }
+});
 
-// init
+// ── init ──────────────────────────────────────────────────
 resize();
-opentype.load(FONT_URL, (err, f) => { if (!err) { font = f; build(); } });
+opentype.load(FONT_URL,(err,f)=>{ if(!err){font=f;rebuild();} });
 </script>
 </body>
 </html>

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bead It</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0a; overflow: hidden; font-family: sans-serif; }
+#canvas { display: block; }
+#ui {
+  position: fixed; top: 20px; right: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  z-index: 10;
+}
+#ui input[type=text] {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; padding: 8px 12px;
+  border-radius: 8px; font-size: 18px;
+  width: 220px; outline: none;
+}
+.row { display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.5); font-size: 12px; }
+.row input[type=range] { flex: 1; accent-color: #fff; }
+select { background: #111; color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+button {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff; padding: 7px 14px;
+  border-radius: 8px; cursor: pointer; font-size: 12px;
+}
+button:hover { background: rgba(255,255,255,0.2); }
+#hint {
+  position: fixed; bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.25); font-size: 12px;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <input type="text" id="txt" value="BEAD" maxlength="8" placeholder="type here…">
+  <div class="row">
+    <span>size</span>
+    <input type="range" id="sl-size" min="6" max="32" value="14">
+    <span id="vl-size">14</span>
+  </div>
+  <div class="row">
+    <span>gap</span>
+    <input type="range" id="sl-gap" min="0" max="6" value="1">
+    <span id="vl-gap">1</span>
+  </div>
+  <div class="row">
+    <span>palette</span>
+    <select id="sel-palette">
+      <option value="rainbow">rainbow</option>
+      <option value="pastel">pastel</option>
+      <option value="neon">neon</option>
+      <option value="mono">mono</option>
+    </select>
+  </div>
+  <button id="btn-shake">shake 🫧</button>
+  <button id="btn-reset">reset</button>
+</div>
+<div id="hint">click / tap to play · tilt on mobile</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<script>
+const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-400-normal.woff';
+const W = window.innerWidth, H = window.innerHeight;
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+const PALETTES = {
+  rainbow: (i, n) => 'hsl(' + (i/n*360) + ',85%,58%)',
+  pastel:  (i, n) => 'hsl(' + (i/n*360) + ',60%,75%)',
+  neon:    (i, n) => 'hsl(' + (i/n*360) + ',100%,55%)',
+  mono:    (i, n) => 'hsl(220,' + (30+i/n*50) + '%,' + (40+i/n*30) + '%)'
+};
+
+function colorToRGB(color) {
+  const tmp = document.createElement('canvas');
+  tmp.width = tmp.height = 1;
+  const c = tmp.getContext('2d');
+  c.fillStyle = color;
+  c.fillRect(0, 0, 1, 1);
+  return c.getImageData(0, 0, 1, 1).data;
+}
+
+function adjustColor(color, amt) {
+  const d = colorToRGB(color);
+  const clamp = v => Math.max(0, Math.min(255, v));
+  return 'rgb(' + clamp(d[0]+amt) + ',' + clamp(d[1]+amt) + ',' + clamp(d[2]+amt) + ')';
+}
+
+function drawBead(x, y, r, color) {
+  // shadow
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = r * 0.9;
+  ctx.shadowOffsetX = r * 0.12;
+  ctx.shadowOffsetY = r * 0.18;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.88, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.01)';
+  ctx.fill();
+  ctx.restore();
+
+  // main body gradient
+  const g = ctx.createRadialGradient(x - r*0.2, y - r*0.2, r*0.05, x, y, r);
+  g.addColorStop(0, adjustColor(color, 55));
+  g.addColorStop(0.45, color);
+  g.addColorStop(1, adjustColor(color, -50));
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  // specular highlight top-left
+  const sg = ctx.createRadialGradient(x - r*0.35, y - r*0.38, 0, x - r*0.35, y - r*0.38, r*0.48);
+  sg.addColorStop(0, 'rgba(255,255,255,0.88)');
+  sg.addColorStop(0.35, 'rgba(255,255,255,0.28)');
+  sg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = sg;
+  ctx.fill();
+
+  // bottom-right reflection
+  const rg = ctx.createRadialGradient(x + r*0.3, y + r*0.35, 0, x + r*0.3, y + r*0.35, r*0.5);
+  rg.addColorStop(0, 'rgba(255,255,255,0.22)');
+  rg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = rg;
+  ctx.fill();
+}
+
+// Matter.js setup
+const { Engine, Bodies, Body, World } = Matter;
+const engine = Engine.create({ gravity: { x: 0, y: 1 } });
+const world = engine.world;
+let walls = [];
+
+function buildWalls() {
+  walls.forEach(w => World.remove(world, w));
+  walls = [
+    Bodies.rectangle(W/2, H + 25, W * 2, 50, { isStatic: true }),
+    Bodies.rectangle(-25, H/2, 50, H * 2, { isStatic: true }),
+    Bodies.rectangle(W + 25, H/2, 50, H * 2, { isStatic: true })
+  ];
+  World.add(world, walls);
+}
+buildWalls();
+
+let font = null;
+let staticBeads = [];
+let beads = [];
+let mBodies = [];
+let physicsActive = false;
+let rafId = null;
+
+function getBeadPositions(text, beadR, gap) {
+  if (!font) return [];
+  const step = beadR * 2 + gap;
+  const fontSize = beadR * 13;
+  const path = font.getPath(text, 0, 0, fontSize);
+  const bb = path.getBoundingBox();
+  const tw = bb.x2 - bb.x1;
+  const th = bb.y2 - bb.y1;
+  const ox = (W - tw) / 2 - bb.x1;
+  const oy = (H - th) / 2 - bb.y1;
+
+  const ofc = document.createElement('canvas');
+  ofc.width = W; ofc.height = H;
+  const oCtx = ofc.getContext('2d');
+  const p2d = new Path2D(path.toPathData(2));
+  oCtx.save();
+  oCtx.translate(ox, oy);
+  oCtx.fillStyle = '#fff';
+  oCtx.fill(p2d);
+  oCtx.restore();
+
+  const imgData = oCtx.getImageData(0, 0, W, H).data;
+  const pts = [];
+  for (let y = beadR; y < H - beadR; y += step) {
+    for (let x = beadR; x < W - beadR; x += step) {
+      const idx = (Math.round(y) * W + Math.round(x)) * 4;
+      if (imgData[idx + 3] > 128) {
+        pts.push({ x, y });
+      }
+    }
+  }
+  return pts;
+}
+
+function buildBeads() {
+  if (rafId) cancelAnimationFrame(rafId);
+  mBodies.forEach(b => World.remove(world, b));
+  mBodies = [];
+  physicsActive = false;
+
+  const text = document.getElementById('txt').value || 'BEAD';
+  const beadR = +document.getElementById('sl-size').value;
+  const gap   = +document.getElementById('sl-gap').value;
+  const palFn = PALETTES[document.getElementById('sel-palette').value];
+
+  const pts = getBeadPositions(text, beadR, gap);
+  const n = pts.length;
+  staticBeads = pts.map((p, i) => ({ x: p.x, y: p.y, r: beadR, color: palFn(i, n) }));
+  beads = staticBeads.map(b => ({ ...b }));
+  render();
+}
+
+function activatePhysics() {
+  if (physicsActive) return;
+  physicsActive = true;
+  mBodies.forEach(b => World.remove(world, b));
+  mBodies = beads.map((b, i) => {
+    const body = Bodies.circle(b.x, b.y, b.r * 0.9, {
+      restitution: 0.42, friction: 0.04, frictionAir: 0.007,
+      label: String(i)
+    });
+    Body.setVelocity(body, { x: (Math.random() - 0.5) * 3, y: Math.random() * 2 });
+    return body;
+  });
+  World.add(world, mBodies);
+  loop();
+}
+
+function resetBeads() {
+  if (rafId) cancelAnimationFrame(rafId);
+  mBodies.forEach(b => World.remove(world, b));
+  mBodies = [];
+  physicsActive = false;
+  engine.gravity.x = 0;
+  engine.gravity.y = 1;
+  beads = staticBeads.map(b => ({ ...b }));
+  render();
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  if (physicsActive) {
+    mBodies.forEach((body, i) => {
+      if (beads[i]) {
+        beads[i].x = body.position.x;
+        beads[i].y = body.position.y;
+      }
+    });
+  }
+  beads.forEach(b => drawBead(b.x, b.y, b.r, b.color));
+}
+
+function loop() {
+  if (!physicsActive) return;
+  Engine.update(engine, 1000 / 60);
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+
+// events
+document.getElementById('btn-shake').addEventListener('click', activatePhysics);
+document.getElementById('btn-reset').addEventListener('click', resetBeads);
+document.getElementById('txt').addEventListener('input', buildBeads);
+document.getElementById('sl-size').addEventListener('input', function() {
+  document.getElementById('vl-size').textContent = this.value;
+  buildBeads();
+});
+document.getElementById('sl-gap').addEventListener('input', function() {
+  document.getElementById('vl-gap').textContent = this.value;
+  buildBeads();
+});
+document.getElementById('sel-palette').addEventListener('change', buildBeads);
+
+canvas.addEventListener('click', function(e) {
+  if (!physicsActive) { activatePhysics(); return; }
+  mBodies.forEach(body => {
+    const dx = body.position.x - e.clientX;
+    const dy = body.position.y - e.clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 130) {
+      const f = 0.018 / (dist + 1);
+      Body.applyForce(body, body.position, { x: dx*f, y: dy*f });
+    }
+  });
+});
+
+canvas.addEventListener('touchstart', function() {
+  if (typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission().catch(function() {});
+  }
+  activatePhysics();
+}, { once: true });
+
+window.addEventListener('devicemotion', function(e) {
+  if (!physicsActive) return;
+  const ax = (e.accelerationIncludingGravity && e.accelerationIncludingGravity.x) || 0;
+  const ay = (e.accelerationIncludingGravity && e.accelerationIncludingGravity.y) || 0;
+  engine.gravity.x = ax * 0.07;
+  engine.gravity.y = -ay * 0.07;
+});
+
+// init
+opentype.load(FONT_URL, function(err, f) {
+  if (err) { console.error('font load failed', err); return; }
+  font = f;
+  buildBeads();
+});
+</script>
+</body>
+</html>

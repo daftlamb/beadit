@@ -40,29 +40,34 @@ button {
   border-radius: 8px; cursor: pointer; font-size: 12px;
 }
 button:hover { background: rgba(0,0,0,0.14); }
-.btn-row { display: flex; gap: 8px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 #hint {
   position: fixed; bottom: 20px; left: 50%;
   transform: translateX(-50%);
   color: rgba(0,0,0,0.3); font-size: 12px;
   pointer-events: none;
 }
-#font-name { color: rgba(0,0,0,0.35); font-size: 11px; text-align: center; }
+#font-name { color: rgba(0,0,0,0.35); font-size: 11px; }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
 <div id="ui">
-  <input type="text" id="txt" value="BEAD" maxlength="6">
+  <input type="text" id="txt" value="BEAD" maxlength="8">
   <div class="row">
     <span>size</span>
-    <input type="range" id="sl-size" min="3" max="20" value="7">
-    <span id="vl-size">7</span>
+    <input type="range" id="sl-size" min="3" max="24" value="8">
+    <span id="vl-size">8</span>
   </div>
   <div class="row">
-    <span>spacing</span>
-    <input type="range" id="sl-gap" min="0" max="8" value="2">
-    <span id="vl-gap">2</span>
+    <span>gap</span>
+    <input type="range" id="sl-gap" min="0" max="10" value="3">
+    <span id="vl-gap">3</span>
+  </div>
+  <div class="row">
+    <span>jitter</span>
+    <input type="range" id="sl-jitter" min="0" max="10" value="3">
+    <span id="vl-jitter">3</span>
   </div>
   <div class="row">
     <span>palette</span>
@@ -86,35 +91,35 @@ button:hover { background: rgba(0,0,0,0.14); }
     <button id="btn-reset">reset</button>
     <button id="btn-export">save ↓</button>
     <label style="cursor:pointer">
-      <button as="span" onclick="this.parentElement.querySelector('input').click()">font ↑</button>
+      <button onclick="event.preventDefault();document.getElementById('font-upload').click()">font ↑</button>
       <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
     </label>
   </div>
   <div id="font-name"></div>
 </div>
-<div id="hint">type to change text</div>
-
+<div id="hint">click canvas to shuffle colors</div>
 <script>
 const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-900-normal.woff';
-
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 let W, H;
 let font = null;
 let beads = [];
-let animFrame = null;
-let shakeOffset = [];
-let shakeT = 0;
-let shaking = false;
+let seed = 42;
 
 // ── palettes ──────────────────────────────────────────────
 const PALETTES = {
-  rainbow: (i, n) => `hsl(${(i/n*360)},55%,58%)`,
-  pastel:  (i, n) => `hsl(${(i/n*360)},40%,72%)`,
+  rainbow: (i, n) => `hsl(${i/n*360},55%,58%)`,
+  pastel:  (i, n) => `hsl(${i/n*360},40%,72%)`,
   mono:    (i, n) => `hsl(220,${15+i/n*25}%,${38+i/n*30}%)`,
   gold:    (i, n) => `hsl(${38+i/n*18},${70+i/n*20}%,${45+i/n*20}%)`,
-  neon:    (i, n) => `hsl(${(i/n*360)},80%,55%)`
+  neon:    (i, n) => `hsl(${i/n*360},80%,55%)`
 };
+
+function seededRand(s) {
+  const x = Math.sin(s + 1) * 43758.5453123;
+  return x - Math.floor(x);
+}
 
 // ── resize ────────────────────────────────────────────────
 function resize() {
@@ -124,222 +129,211 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-// ── path sampling ─────────────────────────────────────────
-function samplePathCommands(cmds, spacing) {
-  const pts = [];
-  let cx = 0, cy = 0;
-  let accumulated = 0;
-  let firstPt = true;
-
-  function addAlong(x0, y0, x1, y1) {
-    const dx = x1 - x0, dy = y1 - y0;
-    const len = Math.sqrt(dx*dx + dy*dy);
-    if (len < 0.001) return;
-    let t = firstPt ? 0 : (spacing - accumulated);
-    while (t <= len) {
-      pts.push({ x: x0 + dx*(t/len), y: y0 + dy*(t/len) });
-      t += spacing;
-      firstPt = false;
-    }
-    accumulated = len - (t - spacing);
+// ── skeleton extraction via Zhang-Suen thinning ───────────
+function thin(data, w, h) {
+  // copy to binary grid
+  let grid = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    grid[i] = data[i * 4 + 3] > 128 ? 1 : 0;
   }
 
-  function cubicBezierPts(x0,y0,x1,y1,x2,y2,x3,y3, steps) {
-    const res = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = i/steps;
-      const mt = 1-t;
-      res.push({
-        x: mt*mt*mt*x0 + 3*mt*mt*t*x1 + 3*mt*t*t*x2 + t*t*t*x3,
-        y: mt*mt*mt*y0 + 3*mt*mt*t*y1 + 3*mt*t*t*y2 + t*t*t*y3
-      });
-    }
-    return res;
-  }
+  function idx(x, y) { return y * w + x; }
+  function p(x, y) { return (x<0||y<0||x>=w||y>=h) ? 0 : grid[idx(x,y)]; }
 
-  function quadBezierPts(x0,y0,x1,y1,x2,y2, steps) {
-    const res = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = i/steps;
-      const mt = 1-t;
-      res.push({
-        x: mt*mt*x0 + 2*mt*t*x1 + t*t*x2,
-        y: mt*mt*y0 + 2*mt*t*y1 + t*t*y2
-      });
-    }
-    return res;
-  }
-
-  let startX = 0, startY = 0;
-  for (const cmd of cmds) {
-    if (cmd.type === 'M') {
-      cx = cmd.x; cy = cmd.y;
-      startX = cx; startY = cy;
-      firstPt = true; accumulated = 0;
-    } else if (cmd.type === 'L') {
-      addAlong(cx, cy, cmd.x, cmd.y);
-      cx = cmd.x; cy = cmd.y;
-    } else if (cmd.type === 'C') {
-      const steps = Math.max(8, Math.ceil(spacing * 2));
-      const bpts = cubicBezierPts(cx,cy,cmd.x1,cmd.y1,cmd.x2,cmd.y2,cmd.x,cmd.y, steps);
-      for (let i = 1; i < bpts.length; i++) addAlong(bpts[i-1].x,bpts[i-1].y,bpts[i].x,bpts[i].y);
-      cx = cmd.x; cy = cmd.y;
-    } else if (cmd.type === 'Q') {
-      const steps = Math.max(8, Math.ceil(spacing * 2));
-      const bpts = quadBezierPts(cx,cy,cmd.x1,cmd.y1,cmd.x,cmd.y, steps);
-      for (let i = 1; i < bpts.length; i++) addAlong(bpts[i-1].x,bpts[i-1].y,bpts[i].x,bpts[i].y);
-      cx = cmd.x; cy = cmd.y;
-    } else if (cmd.type === 'Z') {
-      addAlong(cx, cy, startX, startY);
-      cx = startX; cy = startY;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let pass = 0; pass < 2; pass++) {
+      const toRemove = [];
+      for (let y = 1; y < h-1; y++) {
+        for (let x = 1; x < w-1; x++) {
+          if (!grid[idx(x,y)]) continue;
+          const p2=p(x,y-1), p3=p(x+1,y-1), p4=p(x+1,y),
+                p5=p(x+1,y+1), p6=p(x,y+1), p7=p(x-1,y+1),
+                p8=p(x-1,y), p9=p(x-1,y-1);
+          const A = (p2===0&&p3===1?1:0)+(p3===0&&p4===1?1:0)+
+                    (p4===0&&p5===1?1:0)+(p5===0&&p6===1?1:0)+
+                    (p6===0&&p7===1?1:0)+(p7===0&&p8===1?1:0)+
+                    (p8===0&&p9===1?1:0)+(p9===0&&p2===1?1:0);
+          const B = p2+p3+p4+p5+p6+p7+p8+p9;
+          if (B < 2 || B > 6 || A !== 1) continue;
+          if (pass === 0) {
+            if (p2*p4*p6 !== 0) continue;
+            if (p4*p6*p8 !== 0) continue;
+          } else {
+            if (p2*p4*p8 !== 0) continue;
+            if (p2*p6*p8 !== 0) continue;
+          }
+          toRemove.push(idx(x,y));
+        }
+      }
+      if (toRemove.length) { changed = true; toRemove.forEach(i => { grid[i] = 0; }); }
     }
   }
-  return pts;
+  return grid;
 }
 
-// ── build beads from font path ────────────────────────────
-function build() {
-  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+// ── rasterize text to offscreen canvas ───────────────────
+function rasterizeText(text, targetW, targetH) {
+  const ofc = document.createElement('canvas');
+  ofc.width = targetW; ofc.height = targetH;
+  const oCtx = ofc.getContext('2d');
 
-  const text    = document.getElementById('txt').value || 'BEAD';
-  const beadR   = parseInt(document.getElementById('sl-size').value);
-  const gap     = parseInt(document.getElementById('sl-gap').value);
-  const palette = document.getElementById('sel-palette').value;
-  const shape   = document.getElementById('sel-shape').value;
-  const spacing = beadR * 2 + gap;
-
-  let cmds = null;
+  const chars = text.length || 1;
+  // fit font size so text fills ~80% width and ~60% height
+  let fontSize = Math.min(targetW * 0.8 / chars * 1.4, targetH * 0.6);
+  fontSize = Math.max(fontSize, 40);
 
   if (font) {
-    const fontSize = Math.min(W, H) * 0.72;
     const path = font.getPath(text, 0, 0, fontSize);
     const bb = path.getBoundingBox();
     const tw = bb.x2 - bb.x1;
     const th = bb.y2 - bb.y1;
-    const ox = (W - tw) / 2 - bb.x1;
-    const oy = (H - th) / 2 - bb.y1;
-    // offset commands
-    cmds = path.commands.map(cmd => {
+    // scale to fit
+    const scale = Math.min((targetW * 0.85) / tw, (targetH * 0.65) / th);
+    const scaledSize = fontSize * scale;
+    const path2 = font.getPath(text, 0, 0, scaledSize);
+    const bb2 = path2.getBoundingBox();
+    const ox = (targetW - (bb2.x2 - bb2.x1)) / 2 - bb2.x1;
+    const oy = (targetH - (bb2.y2 - bb2.y1)) / 2 - bb2.y1;
+    const cmds = path2.commands.map(cmd => {
       const c = Object.assign({}, cmd);
-      if ('x'  in c) c.x  += ox;
-      if ('y'  in c) c.y  += oy;
-      if ('x1' in c) c.x1 += ox;
-      if ('y1' in c) c.y1 += oy;
-      if ('x2' in c) c.x2 += ox;
-      if ('y2' in c) c.y2 += oy;
+      if ('x'  in c) c.x  += ox; if ('y'  in c) c.y  += oy;
+      if ('x1' in c) c.x1 += ox; if ('y1' in c) c.y1 += oy;
+      if ('x2' in c) c.x2 += ox; if ('y2' in c) c.y2 += oy;
       return c;
     });
+    const p2d = new Path2D(cmds.reduce((s,c) => {
+      if (c.type==='M') return s+`M${c.x},${c.y}`;
+      if (c.type==='L') return s+`L${c.x},${c.y}`;
+      if (c.type==='C') return s+`C${c.x1},${c.y1},${c.x2},${c.y2},${c.x},${c.y}`;
+      if (c.type==='Q') return s+`Q${c.x1},${c.y1},${c.x},${c.y}`;
+      if (c.type==='Z') return s+'Z';
+      return s;
+    }, ''));
+    oCtx.fillStyle = '#fff';
+    oCtx.fill(p2d);
   } else {
-    // fallback: rasterize with canvas2d, trace outline points
-    const ofc = document.createElement('canvas');
-    ofc.width = W; ofc.height = H;
-    const oCtx = ofc.getContext('2d');
-    const fontSize = Math.min(W, H) * 0.65;
-    oCtx.font = `900 ${fontSize}px Arial Black, Arial, sans-serif`;
+    const scale = Math.min((targetW * 0.85) / (chars * fontSize * 0.6), (targetH * 0.65) / fontSize);
+    const scaledSize = fontSize * scale;
+    oCtx.font = `900 ${scaledSize}px Arial Black, Arial, sans-serif`;
     oCtx.textAlign = 'center';
     oCtx.textBaseline = 'middle';
     oCtx.fillStyle = '#fff';
-    oCtx.fillText(text, W/2, H/2);
-    // sample edge pixels
-    const imgData = oCtx.getImageData(0, 0, W, H).data;
-    const edgePts = [];
-    for (let y = 0; y < H; y += Math.round(spacing)) {
-      for (let x = 0; x < W; x++) {
-        const idx = (y * W + x) * 4;
-        if (imgData[idx+3] > 128) {
-          // check if edge
-          const left  = x > 0   ? imgData[(y*W+x-1)*4+3] : 0;
-          const right = x < W-1 ? imgData[(y*W+x+1)*4+3] : 0;
-          if (left < 128 || right < 128) edgePts.push({x, y});
-        }
-      }
+    oCtx.fillText(text, targetW/2, targetH/2);
+  }
+  return oCtx.getImageData(0, 0, targetW, targetH);
+}
+
+// ── build ─────────────────────────────────────────────────
+function build() {
+  const text    = document.getElementById('txt').value || 'BEAD';
+  const beadR   = parseInt(document.getElementById('sl-size').value);
+  const gap     = parseInt(document.getElementById('sl-gap').value);
+  const jitter  = parseInt(document.getElementById('sl-jitter').value);
+  const palette = document.getElementById('sel-palette').value;
+  const shape   = document.getElementById('sel-shape').value;
+  const spacing = beadR * 2 + gap;
+
+  // rasterize at screen size
+  const imgData = rasterizeText(text, W, H);
+
+  // thin to skeleton
+  const skelGrid = thin(imgData.data, W, H);
+
+  // collect skeleton pixels, subsample by spacing
+  const rawPts = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (skelGrid[y * W + x]) rawPts.push({x, y});
     }
-    for (let x = 0; x < W; x += Math.round(spacing)) {
-      for (let y = 0; y < H; y++) {
-        const idx = (y * W + x) * 4;
-        if (imgData[idx+3] > 128) {
-          const top    = y > 0   ? imgData[((y-1)*W+x)*4+3] : 0;
-          const bottom = y < H-1 ? imgData[((y+1)*W+x)*4+3] : 0;
-          if (top < 128 || bottom < 128) edgePts.push({x, y});
-        }
-      }
-    }
-    beads = edgePts.map((p, i) => ({
-      x: p.x, y: p.y, r: beadR,
-      color: PALETTES[palette](i, edgePts.length),
-      shape: pickShape(shape, i)
-    }));
-    shakeOffset = beads.map(() => ({ x: 0, y: 0 }));
-    render();
-    return;
   }
 
-  const pts = samplePathCommands(cmds, spacing);
-  const n = pts.length;
-  beads = pts.map((p, i) => ({
-    x: p.x, y: p.y, r: beadR,
-    color: PALETTES[palette](i, n),
-    shape: pickShape(shape, i)
-  }));
-  shakeOffset = beads.map(() => ({ x: 0, y: 0 }));
+  // subsample: keep one point per spacing distance
+  const kept = [];
+  const used = new Uint8Array(W * H);
+  for (const pt of rawPts) {
+    if (used[pt.y * W + pt.x]) continue;
+    kept.push(pt);
+    // mark nearby as used
+    const r = Math.round(spacing);
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = pt.x + dx, ny = pt.y + dy;
+        if (nx >= 0 && ny >= 0 && nx < W && ny < H) {
+          if (dx*dx + dy*dy <= r*r) used[ny * W + nx] = 1;
+        }
+      }
+    }
+  }
+
+  const n = kept.length;
+  beads = kept.map((p, i) => {
+    const r1 = seededRand(seed + i * 3);
+    const r2 = seededRand(seed + i * 3 + 1);
+    const angle = r1 * Math.PI * 2;
+    const dist  = r2 * jitter;
+    return {
+      x: p.x + Math.cos(angle) * dist,
+      y: p.y + Math.sin(angle) * dist,
+      r: beadR,
+      color: PALETTES[palette](i, n),
+      shape: pickShape(shape, i, seed)
+    };
+  });
+
   render();
 }
 
-function pickShape(mode, i) {
+function pickShape(mode, i, s) {
   if (mode !== 'mix') return mode;
-  const shapes = ['circle', 'diamond', 'star', 'hex'];
-  return shapes[i % shapes.length];
+  const shapes = ['circle', 'diamond', 'star', 'hex', 'circle', 'circle'];
+  return shapes[Math.floor(seededRand(s + i * 7) * shapes.length)];
 }
 
 // ── draw single bead ──────────────────────────────────────
 function drawBead(x, y, r, color, shape) {
   ctx.fillStyle = color;
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 0.7;
 
   if (shape === 'circle') {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI*2);
     ctx.fill();
     ctx.stroke();
-    // small specular
     ctx.beginPath();
-    ctx.arc(x - r*0.3, y - r*0.3, r*0.28, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.arc(x - r*0.28, y - r*0.3, r*0.25, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
     ctx.fill();
 
   } else if (shape === 'diamond') {
     ctx.beginPath();
-    ctx.moveTo(x,     y - r*1.2);
-    ctx.lineTo(x + r, y);
-    ctx.lineTo(x,     y + r*1.2);
-    ctx.lineTo(x - r, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // top face highlight
-    ctx.beginPath();
     ctx.moveTo(x,       y - r*1.2);
     ctx.lineTo(x + r,   y);
-    ctx.lineTo(x,       y - r*0.1);
+    ctx.lineTo(x,       y + r*1.2);
+    ctx.lineTo(x - r,   y);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - r*1.2);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x, y - r*0.1);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
     ctx.fill();
 
   } else if (shape === 'star') {
-    const spikes = 5;
-    const outerR = r * 1.1;
-    const innerR = r * 0.45;
+    const outer = r * 1.1, inner = r * 0.45;
     ctx.beginPath();
-    for (let i = 0; i < spikes * 2; i++) {
-      const angle = (i * Math.PI / spikes) - Math.PI / 2;
-      const rad = i % 2 === 0 ? outerR : innerR;
-      if (i === 0) ctx.moveTo(x + Math.cos(angle)*rad, y + Math.sin(angle)*rad);
-      else ctx.lineTo(x + Math.cos(angle)*rad, y + Math.sin(angle)*rad);
+    for (let i = 0; i < 10; i++) {
+      const a = (i * Math.PI / 5) - Math.PI / 2;
+      const rad = i % 2 === 0 ? outer : inner;
+      if (i === 0) ctx.moveTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
+      else ctx.lineTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
     }
     ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    ctx.fill(); ctx.stroke();
 
   } else if (shape === 'hex') {
     ctx.beginPath();
@@ -349,16 +343,14 @@ function drawBead(x, y, r, color, shape) {
       else ctx.lineTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
     }
     ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // top-left face
+    ctx.fill(); ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x, y);
     const a0 = -Math.PI/6, a1 = Math.PI/6;
+    ctx.moveTo(x, y);
     ctx.lineTo(x + Math.cos(a0)*r, y + Math.sin(a0)*r);
     ctx.lineTo(x + Math.cos(a1)*r, y + Math.sin(a1)*r);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
     ctx.fill();
   }
 }
@@ -368,38 +360,7 @@ function render() {
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#f0ece4';
   ctx.fillRect(0, 0, W, H);
-
-  for (let i = 0; i < beads.length; i++) {
-    const b = beads[i];
-    const ox = shakeOffset[i] ? shakeOffset[i].x : 0;
-    const oy = shakeOffset[i] ? shakeOffset[i].y : 0;
-    drawBead(b.x + ox, b.y + oy, b.r, b.color, b.shape);
-  }
-}
-
-// ── shake animation ───────────────────────────────────────
-function shake() {
-  if (shaking) return;
-  shaking = true;
-  shakeT = 0;
-  const amp = beads[0] ? beads[0].r * 1.8 : 8;
-  shakeOffset = beads.map(() => ({
-    x: (Math.random()-0.5) * amp * 2,
-    y: (Math.random()-0.5) * amp * 2
-  }));
-
-  function tick() {
-    shakeT += 0.08;
-    const decay = Math.max(0, 1 - shakeT);
-    for (let i = 0; i < shakeOffset.length; i++) {
-      shakeOffset[i].x *= 0.82;
-      shakeOffset[i].y *= 0.82;
-    }
-    render();
-    if (decay > 0.02) animFrame = requestAnimationFrame(tick);
-    else { shaking = false; shakeOffset = beads.map(() => ({x:0,y:0})); render(); }
-  }
-  animFrame = requestAnimationFrame(tick);
+  for (const b of beads) drawBead(b.x, b.y, b.r, b.color, b.shape);
 }
 
 // ── export ────────────────────────────────────────────────
@@ -412,45 +373,35 @@ function exportPNG() {
 
 // ── events ────────────────────────────────────────────────
 document.getElementById('txt').addEventListener('input', build);
-document.getElementById('sl-size').addEventListener('input', function() {
-  document.getElementById('vl-size').textContent = this.value;
-  build();
-});
-document.getElementById('sl-gap').addEventListener('input', function() {
-  document.getElementById('vl-gap').textContent = this.value;
-  build();
+['sl-size','sl-gap','sl-jitter'].forEach(id => {
+  document.getElementById(id).addEventListener('input', function() {
+    document.getElementById('vl-'+id.replace('sl-','')).textContent = this.value;
+    build();
+  });
 });
 document.getElementById('sel-palette').addEventListener('change', build);
 document.getElementById('sel-shape').addEventListener('change', build);
-document.getElementById('btn-reset').addEventListener('click', function() {
-  document.getElementById('txt').value = 'BEAD';
-  build();
+document.getElementById('btn-reset').addEventListener('click', () => {
+  document.getElementById('txt').value = 'BEAD'; build();
 });
 document.getElementById('btn-export').addEventListener('click', exportPNG);
+canvas.addEventListener('click', () => { seed = Math.floor(Math.random()*9999); build(); });
 
 document.getElementById('font-upload').addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = function(ev) {
-    try {
-      font = opentype.parse(ev.target.result);
-      document.getElementById('font-name').textContent = file.name;
-      build();
-    } catch(err) { console.error('font parse failed', err); }
+  reader.onload = ev => {
+    try { font = opentype.parse(ev.target.result); document.getElementById('font-name').textContent = file.name; build(); }
+    catch(err) { console.error('font parse failed', err); }
   };
   reader.readAsArrayBuffer(file);
 });
-
-// shake on canvas click
-canvas.addEventListener('click', shake);
 
 // ── init ──────────────────────────────────────────────────
 resize();
 opentype.load(FONT_URL, function(err, f) {
   if (err) { console.warn('CDN font failed, using system font'); return; }
-  font = f;
-  build();
+  font = f; build();
 });
 </script>
 </body>

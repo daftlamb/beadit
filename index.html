@@ -4,14 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bead It</title>
+<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #f0ece4; overflow: hidden; font-family: sans-serif; }
-#canvas { display: block; }
+canvas { display: block; }
 #ui {
-  position: fixed; top: 20px; right: 20px;
+  position: fixed; top: 20px; left: 50%;
+  transform: translateX(-50%);
   display: flex; flex-direction: column; gap: 10px;
-  z-index: 10;
+  align-items: center;
+  background: rgba(255,255,255,0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 16px;
+  padding: 16px 20px;
+  min-width: 280px;
+  z-index: 100;
 }
 #ui input[type=text] {
   background: rgba(0,0,0,0.06);
@@ -19,8 +28,9 @@ body { background: #f0ece4; overflow: hidden; font-family: sans-serif; }
   color: #222; padding: 8px 12px;
   border-radius: 8px; font-size: 18px;
   width: 220px; outline: none;
+  text-align: center; letter-spacing: 4px;
 }
-.row { display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,0.5); font-size: 12px; }
+.row { display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,0.5); font-size: 12px; width: 100%; }
 .row input[type=range] { flex: 1; accent-color: #555; }
 select { background: #fff; color: #222; border: 1px solid rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
 button {
@@ -30,334 +40,394 @@ button {
   border-radius: 8px; cursor: pointer; font-size: 12px;
 }
 button:hover { background: rgba(0,0,0,0.14); }
+.btn-row { display: flex; gap: 8px; }
 #hint {
   position: fixed; bottom: 20px; left: 50%;
   transform: translateX(-50%);
   color: rgba(0,0,0,0.3); font-size: 12px;
   pointer-events: none;
 }
+#font-name { color: rgba(0,0,0,0.35); font-size: 11px; text-align: center; }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
 <div id="ui">
-  <input type="text" id="txt" value="BEAD" maxlength="8" placeholder="type here…">
+  <input type="text" id="txt" value="BEAD" maxlength="6">
   <div class="row">
     <span>size</span>
-    <input type="range" id="sl-size" min="4" max="32" value="8">
-    <span id="vl-size">8</span>
+    <input type="range" id="sl-size" min="3" max="20" value="7">
+    <span id="vl-size">7</span>
   </div>
   <div class="row">
-    <span>gap</span>
-    <input type="range" id="sl-gap" min="0" max="6" value="1">
-    <span id="vl-gap">1</span>
+    <span>spacing</span>
+    <input type="range" id="sl-gap" min="0" max="8" value="2">
+    <span id="vl-gap">2</span>
   </div>
   <div class="row">
     <span>palette</span>
     <select id="sel-palette">
       <option value="rainbow">rainbow</option>
       <option value="pastel">pastel</option>
-      <option value="neon">neon</option>
       <option value="mono">mono</option>
+      <option value="gold">gold</option>
+      <option value="neon">neon</option>
+    </select>
+    <span>shape</span>
+    <select id="sel-shape">
+      <option value="mix">mix</option>
+      <option value="circle">circle</option>
+      <option value="diamond">diamond</option>
+      <option value="star">star</option>
+      <option value="hex">hex</option>
     </select>
   </div>
-  <button id="btn-shake">shake 🫧</button>
-  <button id="btn-reset">reset</button>
-  <label style="cursor:pointer">
-    <span style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:7px 14px;border-radius:8px;font-size:12px;display:block;text-align:center">font ↑</span>
-    <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
-  </label>
-  <div id="font-name" style="color:rgba(255,255,255,0.35);font-size:11px;text-align:center"></div>
+  <div class="btn-row">
+    <button id="btn-reset">reset</button>
+    <button id="btn-export">save ↓</button>
+    <label style="cursor:pointer">
+      <button as="span" onclick="this.parentElement.querySelector('input').click()">font ↑</button>
+      <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
+    </label>
+  </div>
+  <div id="font-name"></div>
 </div>
-<div id="hint">click / tap to play · tilt on mobile</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<div id="hint">type to change text</div>
+
 <script>
-const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-400-normal.woff';
-const W = window.innerWidth, H = window.innerHeight;
+const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-900-normal.woff';
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-canvas.width = W; canvas.height = H;
+let W, H;
+let font = null;
+let beads = [];
+let animFrame = null;
+let shakeOffset = [];
+let shakeT = 0;
+let shaking = false;
 
+// ── palettes ──────────────────────────────────────────────
 const PALETTES = {
-  rainbow: (i, n) => 'hsl(' + (i/n*360) + ',55%,62%)',
-  pastel:  (i, n) => 'hsl(' + (i/n*360) + ',38%,72%)',
-  neon:    (i, n) => 'hsl(' + (i/n*360) + ',70%,58%)',
-  mono:    (i, n) => 'hsl(220,' + (18+i/n*30) + '%,' + (42+i/n*28) + '%)'
+  rainbow: (i, n) => `hsl(${(i/n*360)},55%,58%)`,
+  pastel:  (i, n) => `hsl(${(i/n*360)},40%,72%)`,
+  mono:    (i, n) => `hsl(220,${15+i/n*25}%,${38+i/n*30}%)`,
+  gold:    (i, n) => `hsl(${38+i/n*18},${70+i/n*20}%,${45+i/n*20}%)`,
+  neon:    (i, n) => `hsl(${(i/n*360)},80%,55%)`
 };
 
-function colorToRGB(color) {
-  const tmp = document.createElement('canvas');
-  tmp.width = tmp.height = 1;
-  const c = tmp.getContext('2d');
-  c.fillStyle = color;
-  c.fillRect(0, 0, 1, 1);
-  return c.getImageData(0, 0, 1, 1).data;
+// ── resize ────────────────────────────────────────────────
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  build();
 }
+window.addEventListener('resize', resize);
 
-function adjustColor(color, amt) {
-  const d = colorToRGB(color);
-  const clamp = v => Math.max(0, Math.min(255, v));
-  return 'rgb(' + clamp(d[0]+amt) + ',' + clamp(d[1]+amt) + ',' + clamp(d[2]+amt) + ')';
-}
+// ── path sampling ─────────────────────────────────────────
+function samplePathCommands(cmds, spacing) {
+  const pts = [];
+  let cx = 0, cy = 0;
+  let accumulated = 0;
+  let firstPt = true;
 
-function drawBead(x, y, r, color) {
-  // table shadow - radial gradient ellipse (no filter for performance)
-  ctx.save();
-  const sg2 = ctx.createRadialGradient(x + r*0.15, y + r*0.9, 0, x + r*0.15, y + r*0.9, r*0.75);
-  sg2.addColorStop(0, 'rgba(0,0,0,0.22)');
-  sg2.addColorStop(0.5, 'rgba(0,0,0,0.08)');
-  sg2.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.scale(1, 0.35);
-  ctx.beginPath();
-  ctx.arc(x + r*0.15, (y + r*0.9) / 0.35, r*0.75, 0, Math.PI*2);
-  ctx.fillStyle = sg2;
-  ctx.fill();
-  ctx.restore();
-
-  // gem facets - hexagon divided into triangular faces
-  const sides = 6;
-  const angles = [];
-  for (let i = 0; i < sides; i++) {
-    angles.push((i / sides) * Math.PI * 2 - Math.PI / 6);
-  }
-  const verts = angles.map(a => ({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }));
-
-  // face brightness offsets to simulate light from top-left
-  const brightness = [55, 30, -10, -35, -20, 20];
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(verts[0].x, verts[0].y);
-  for (let i = 1; i < sides; i++) ctx.lineTo(verts[i].x, verts[i].y);
-  ctx.closePath();
-  ctx.clip();
-
-  for (let i = 0; i < sides; i++) {
-    const v0 = verts[i];
-    const v1 = verts[(i + 1) % sides];
-    const faceColor = adjustColor(color, brightness[i]);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(v0.x, v0.y);
-    ctx.lineTo(v1.x, v1.y);
-    ctx.closePath();
-    ctx.fillStyle = faceColor;
-    ctx.fill();
-    // subtle face edge
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
+  function addAlong(x0, y0, x1, y1) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 0.001) return;
+    let t = firstPt ? 0 : (spacing - accumulated);
+    while (t <= len) {
+      pts.push({ x: x0 + dx*(t/len), y: y0 + dy*(t/len) });
+      t += spacing;
+      firstPt = false;
+    }
+    accumulated = len - (t - spacing);
   }
 
-  // center radial glow
-  const cg = ctx.createRadialGradient(x - r*0.15, y - r*0.15, 0, x, y, r * 0.9);
-  cg.addColorStop(0, 'rgba(255,255,255,0.18)');
-  cg.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = cg;
-  ctx.beginPath();
-  ctx.moveTo(verts[0].x, verts[0].y);
-  for (let i = 1; i < sides; i++) ctx.lineTo(verts[i].x, verts[i].y);
-  ctx.closePath();
-  ctx.fill();
+  function cubicBezierPts(x0,y0,x1,y1,x2,y2,x3,y3, steps) {
+    const res = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i/steps;
+      const mt = 1-t;
+      res.push({
+        x: mt*mt*mt*x0 + 3*mt*mt*t*x1 + 3*mt*t*t*x2 + t*t*t*x3,
+        y: mt*mt*mt*y0 + 3*mt*mt*t*y1 + 3*mt*t*t*y2 + t*t*t*y3
+      });
+    }
+    return res;
+  }
 
-  ctx.restore();
+  function quadBezierPts(x0,y0,x1,y1,x2,y2, steps) {
+    const res = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i/steps;
+      const mt = 1-t;
+      res.push({
+        x: mt*mt*x0 + 2*mt*t*x1 + t*t*x2,
+        y: mt*mt*y0 + 2*mt*t*y1 + t*t*y2
+      });
+    }
+    return res;
+  }
 
-  // sharp specular highlight - exaggerated like reference
-  const sp = ctx.createRadialGradient(x - r*0.28, y - r*0.32, 0, x - r*0.28, y - r*0.32, r*0.38);
-  sp.addColorStop(0, 'rgba(255,255,255,0.95)');
-  sp.addColorStop(0.3, 'rgba(255,255,255,0.5)');
-  sp.addColorStop(0.6, 'rgba(255,255,255,0.1)');
-  sp.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI*2);
-  ctx.fillStyle = sp;
-  ctx.fill();
-
-  // tiny bright center spark
-  ctx.beginPath();
-  ctx.arc(x - r*0.28, y - r*0.32, r*0.1, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(255,255,255,0.98)';
-  ctx.fill();
+  let startX = 0, startY = 0;
+  for (const cmd of cmds) {
+    if (cmd.type === 'M') {
+      cx = cmd.x; cy = cmd.y;
+      startX = cx; startY = cy;
+      firstPt = true; accumulated = 0;
+    } else if (cmd.type === 'L') {
+      addAlong(cx, cy, cmd.x, cmd.y);
+      cx = cmd.x; cy = cmd.y;
+    } else if (cmd.type === 'C') {
+      const steps = Math.max(8, Math.ceil(spacing * 2));
+      const bpts = cubicBezierPts(cx,cy,cmd.x1,cmd.y1,cmd.x2,cmd.y2,cmd.x,cmd.y, steps);
+      for (let i = 1; i < bpts.length; i++) addAlong(bpts[i-1].x,bpts[i-1].y,bpts[i].x,bpts[i].y);
+      cx = cmd.x; cy = cmd.y;
+    } else if (cmd.type === 'Q') {
+      const steps = Math.max(8, Math.ceil(spacing * 2));
+      const bpts = quadBezierPts(cx,cy,cmd.x1,cmd.y1,cmd.x,cmd.y, steps);
+      for (let i = 1; i < bpts.length; i++) addAlong(bpts[i-1].x,bpts[i-1].y,bpts[i].x,bpts[i].y);
+      cx = cmd.x; cy = cmd.y;
+    } else if (cmd.type === 'Z') {
+      addAlong(cx, cy, startX, startY);
+      cx = startX; cy = startY;
+    }
+  }
+  return pts;
 }
 
-// Matter.js setup
-const { Engine, Bodies, Body, World } = Matter;
-const engine = Engine.create({ gravity: { x: 0, y: 1 } });
-const world = engine.world;
-let walls = [];
+// ── build beads from font path ────────────────────────────
+function build() {
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
 
-function buildWalls() {
-  walls.forEach(w => World.remove(world, w));
-  walls = [
-    Bodies.rectangle(W/2, H + 25, W * 2, 50, { isStatic: true }),
-    Bodies.rectangle(-25, H/2, 50, H * 2, { isStatic: true }),
-    Bodies.rectangle(W + 25, H/2, 50, H * 2, { isStatic: true })
-  ];
-  World.add(world, walls);
-}
-buildWalls();
+  const text    = document.getElementById('txt').value || 'BEAD';
+  const beadR   = parseInt(document.getElementById('sl-size').value);
+  const gap     = parseInt(document.getElementById('sl-gap').value);
+  const palette = document.getElementById('sel-palette').value;
+  const shape   = document.getElementById('sel-shape').value;
+  const spacing = beadR * 2 + gap;
 
-let font = null;
-let staticBeads = [];
-let beads = [];
-let mBodies = [];
-let physicsActive = false;
-let rafId = null;
+  let cmds = null;
 
-function getBeadPositions(text, beadR, gap) {
-  const step = beadR * 1.5 + gap;
-  const ofc = document.createElement('canvas');
-  ofc.width = W; ofc.height = H;
-  const oCtx = ofc.getContext('2d');
-
-  // use uploaded font or fall back to system bold font
-  const fontSize = Math.min(W, H) * 0.55;
   if (font) {
-    // opentype path rendering
+    const fontSize = Math.min(W, H) * 0.72;
     const path = font.getPath(text, 0, 0, fontSize);
     const bb = path.getBoundingBox();
     const tw = bb.x2 - bb.x1;
     const th = bb.y2 - bb.y1;
     const ox = (W - tw) / 2 - bb.x1;
     const oy = (H - th) / 2 - bb.y1;
-    const p2d = new Path2D(path.toPathData(2));
-    oCtx.save();
-    oCtx.translate(ox, oy);
-    oCtx.fillStyle = '#fff';
-    oCtx.fill(p2d);
-    oCtx.restore();
+    // offset commands
+    cmds = path.commands.map(cmd => {
+      const c = Object.assign({}, cmd);
+      if ('x'  in c) c.x  += ox;
+      if ('y'  in c) c.y  += oy;
+      if ('x1' in c) c.x1 += ox;
+      if ('y1' in c) c.y1 += oy;
+      if ('x2' in c) c.x2 += ox;
+      if ('y2' in c) c.y2 += oy;
+      return c;
+    });
   } else {
-    // fallback: Canvas 2D text (no font file needed)
-    oCtx.fillStyle = '#fff';
-    oCtx.font = 'bold ' + fontSize + 'px Arial, Helvetica, sans-serif';
+    // fallback: rasterize with canvas2d, trace outline points
+    const ofc = document.createElement('canvas');
+    ofc.width = W; ofc.height = H;
+    const oCtx = ofc.getContext('2d');
+    const fontSize = Math.min(W, H) * 0.65;
+    oCtx.font = `900 ${fontSize}px Arial Black, Arial, sans-serif`;
     oCtx.textAlign = 'center';
     oCtx.textBaseline = 'middle';
-    oCtx.fillText(text, W / 2, H / 2);
-  }
-
-  const imgData = oCtx.getImageData(0, 0, W, H).data;
-  const pts = [];
-  for (let y = beadR; y < H - beadR; y += step) {
-    for (let x = beadR; x < W - beadR; x += step) {
-      const idx = (Math.round(y) * W + Math.round(x)) * 4;
-      if (imgData[idx + 3] > 128) {
-        pts.push({ x, y });
+    oCtx.fillStyle = '#fff';
+    oCtx.fillText(text, W/2, H/2);
+    // sample edge pixels
+    const imgData = oCtx.getImageData(0, 0, W, H).data;
+    const edgePts = [];
+    for (let y = 0; y < H; y += Math.round(spacing)) {
+      for (let x = 0; x < W; x++) {
+        const idx = (y * W + x) * 4;
+        if (imgData[idx+3] > 128) {
+          // check if edge
+          const left  = x > 0   ? imgData[(y*W+x-1)*4+3] : 0;
+          const right = x < W-1 ? imgData[(y*W+x+1)*4+3] : 0;
+          if (left < 128 || right < 128) edgePts.push({x, y});
+        }
       }
     }
+    for (let x = 0; x < W; x += Math.round(spacing)) {
+      for (let y = 0; y < H; y++) {
+        const idx = (y * W + x) * 4;
+        if (imgData[idx+3] > 128) {
+          const top    = y > 0   ? imgData[((y-1)*W+x)*4+3] : 0;
+          const bottom = y < H-1 ? imgData[((y+1)*W+x)*4+3] : 0;
+          if (top < 128 || bottom < 128) edgePts.push({x, y});
+        }
+      }
+    }
+    beads = edgePts.map((p, i) => ({
+      x: p.x, y: p.y, r: beadR,
+      color: PALETTES[palette](i, edgePts.length),
+      shape: pickShape(shape, i)
+    }));
+    shakeOffset = beads.map(() => ({ x: 0, y: 0 }));
+    render();
+    return;
   }
-  return pts;
-}
 
-function buildBeads() {
-  if (rafId) cancelAnimationFrame(rafId);
-  mBodies.forEach(b => World.remove(world, b));
-  mBodies = [];
-  physicsActive = false;
-
-  const text = document.getElementById('txt').value || 'BEAD';
-  const beadR = +document.getElementById('sl-size').value;
-  const gap   = +document.getElementById('sl-gap').value;
-  const palFn = PALETTES[document.getElementById('sel-palette').value];
-
-  const pts = getBeadPositions(text, beadR, gap);
+  const pts = samplePathCommands(cmds, spacing);
   const n = pts.length;
-  staticBeads = pts.map((p, i) => ({ x: p.x, y: p.y, r: beadR, color: palFn(i, n) }));
-  beads = staticBeads.map(b => ({ ...b }));
+  beads = pts.map((p, i) => ({
+    x: p.x, y: p.y, r: beadR,
+    color: PALETTES[palette](i, n),
+    shape: pickShape(shape, i)
+  }));
+  shakeOffset = beads.map(() => ({ x: 0, y: 0 }));
   render();
 }
 
-function activatePhysics() {
-  if (physicsActive) return;
-  physicsActive = true;
-  mBodies.forEach(b => World.remove(world, b));
-  mBodies = beads.map((b, i) => {
-    const body = Bodies.circle(b.x, b.y, b.r * 0.9, {
-      restitution: 0.42, friction: 0.04, frictionAir: 0.007,
-      label: String(i)
-    });
-    Body.setVelocity(body, { x: (Math.random() - 0.5) * 3, y: Math.random() * 2 });
-    return body;
-  });
-  World.add(world, mBodies);
-  loop();
+function pickShape(mode, i) {
+  if (mode !== 'mix') return mode;
+  const shapes = ['circle', 'diamond', 'star', 'hex'];
+  return shapes[i % shapes.length];
 }
 
-function resetBeads() {
-  if (rafId) cancelAnimationFrame(rafId);
-  mBodies.forEach(b => World.remove(world, b));
-  mBodies = [];
-  physicsActive = false;
-  engine.gravity.x = 0;
-  engine.gravity.y = 1;
-  beads = staticBeads.map(b => ({ ...b }));
-  render();
+// ── draw single bead ──────────────────────────────────────
+function drawBead(x, y, r, color, shape) {
+  ctx.fillStyle = color;
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 0.8;
+
+  if (shape === 'circle') {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+    // small specular
+    ctx.beginPath();
+    ctx.arc(x - r*0.3, y - r*0.3, r*0.28, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fill();
+
+  } else if (shape === 'diamond') {
+    ctx.beginPath();
+    ctx.moveTo(x,     y - r*1.2);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x,     y + r*1.2);
+    ctx.lineTo(x - r, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // top face highlight
+    ctx.beginPath();
+    ctx.moveTo(x,       y - r*1.2);
+    ctx.lineTo(x + r,   y);
+    ctx.lineTo(x,       y - r*0.1);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fill();
+
+  } else if (shape === 'star') {
+    const spikes = 5;
+    const outerR = r * 1.1;
+    const innerR = r * 0.45;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const angle = (i * Math.PI / spikes) - Math.PI / 2;
+      const rad = i % 2 === 0 ? outerR : innerR;
+      if (i === 0) ctx.moveTo(x + Math.cos(angle)*rad, y + Math.sin(angle)*rad);
+      else ctx.lineTo(x + Math.cos(angle)*rad, y + Math.sin(angle)*rad);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+  } else if (shape === 'hex') {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+      if (i === 0) ctx.moveTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
+      else ctx.lineTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // top-left face
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const a0 = -Math.PI/6, a1 = Math.PI/6;
+    ctx.lineTo(x + Math.cos(a0)*r, y + Math.sin(a0)*r);
+    ctx.lineTo(x + Math.cos(a1)*r, y + Math.sin(a1)*r);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill();
+  }
 }
 
+// ── render ────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, W, H);
-  if (physicsActive) {
-    mBodies.forEach((body, i) => {
-      if (beads[i]) {
-        beads[i].x = body.position.x;
-        beads[i].y = body.position.y;
-      }
-    });
+  ctx.fillStyle = '#f0ece4';
+  ctx.fillRect(0, 0, W, H);
+
+  for (let i = 0; i < beads.length; i++) {
+    const b = beads[i];
+    const ox = shakeOffset[i] ? shakeOffset[i].x : 0;
+    const oy = shakeOffset[i] ? shakeOffset[i].y : 0;
+    drawBead(b.x + ox, b.y + oy, b.r, b.color, b.shape);
   }
-  beads.forEach(b => drawBead(b.x, b.y, b.r, b.color));
 }
 
-function loop() {
-  if (!physicsActive) return;
-  Engine.update(engine, 1000 / 60);
-  render();
-  rafId = requestAnimationFrame(loop);
+// ── shake animation ───────────────────────────────────────
+function shake() {
+  if (shaking) return;
+  shaking = true;
+  shakeT = 0;
+  const amp = beads[0] ? beads[0].r * 1.8 : 8;
+  shakeOffset = beads.map(() => ({
+    x: (Math.random()-0.5) * amp * 2,
+    y: (Math.random()-0.5) * amp * 2
+  }));
+
+  function tick() {
+    shakeT += 0.08;
+    const decay = Math.max(0, 1 - shakeT);
+    for (let i = 0; i < shakeOffset.length; i++) {
+      shakeOffset[i].x *= 0.82;
+      shakeOffset[i].y *= 0.82;
+    }
+    render();
+    if (decay > 0.02) animFrame = requestAnimationFrame(tick);
+    else { shaking = false; shakeOffset = beads.map(() => ({x:0,y:0})); render(); }
+  }
+  animFrame = requestAnimationFrame(tick);
 }
 
-// events
-document.getElementById('btn-shake').addEventListener('click', activatePhysics);
-document.getElementById('btn-reset').addEventListener('click', resetBeads);
-document.getElementById('txt').addEventListener('input', buildBeads);
+// ── export ────────────────────────────────────────────────
+function exportPNG() {
+  const link = document.createElement('a');
+  link.download = 'beadit.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// ── events ────────────────────────────────────────────────
+document.getElementById('txt').addEventListener('input', build);
 document.getElementById('sl-size').addEventListener('input', function() {
   document.getElementById('vl-size').textContent = this.value;
-  buildBeads();
+  build();
 });
 document.getElementById('sl-gap').addEventListener('input', function() {
   document.getElementById('vl-gap').textContent = this.value;
-  buildBeads();
+  build();
 });
-document.getElementById('sel-palette').addEventListener('change', buildBeads);
-
-canvas.addEventListener('click', function(e) {
-  if (!physicsActive) { activatePhysics(); return; }
-  mBodies.forEach(body => {
-    const dx = body.position.x - e.clientX;
-    const dy = body.position.y - e.clientY;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 130) {
-      const f = 0.018 / (dist + 1);
-      Body.applyForce(body, body.position, { x: dx*f, y: dy*f });
-    }
-  });
+document.getElementById('sel-palette').addEventListener('change', build);
+document.getElementById('sel-shape').addEventListener('change', build);
+document.getElementById('btn-reset').addEventListener('click', function() {
+  document.getElementById('txt').value = 'BEAD';
+  build();
 });
+document.getElementById('btn-export').addEventListener('click', exportPNG);
 
-canvas.addEventListener('touchstart', function() {
-  if (typeof DeviceMotionEvent !== 'undefined' &&
-      typeof DeviceMotionEvent.requestPermission === 'function') {
-    DeviceMotionEvent.requestPermission().catch(function() {});
-  }
-  activatePhysics();
-}, { once: true });
-
-window.addEventListener('devicemotion', function(e) {
-  if (!physicsActive) return;
-  const ax = (e.accelerationIncludingGravity && e.accelerationIncludingGravity.x) || 0;
-  const ay = (e.accelerationIncludingGravity && e.accelerationIncludingGravity.y) || 0;
-  engine.gravity.x = ax * 0.07;
-  engine.gravity.y = -ay * 0.07;
-});
-
-// font upload
 document.getElementById('font-upload').addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -366,20 +436,21 @@ document.getElementById('font-upload').addEventListener('change', function(e) {
     try {
       font = opentype.parse(ev.target.result);
       document.getElementById('font-name').textContent = file.name;
-      buildBeads();
-    } catch(err) {
-      console.error('font parse failed', err);
-    }
+      build();
+    } catch(err) { console.error('font parse failed', err); }
   };
   reader.readAsArrayBuffer(file);
 });
 
-// init - build immediately with fallback, reload when font arrives
-buildBeads();
+// shake on canvas click
+canvas.addEventListener('click', shake);
+
+// ── init ──────────────────────────────────────────────────
+resize();
 opentype.load(FONT_URL, function(err, f) {
-  if (err) { console.warn('font load failed, using system font'); return; }
+  if (err) { console.warn('CDN font failed, using system font'); return; }
   font = f;
-  buildBeads();
+  build();
 });
 </script>
 </body>

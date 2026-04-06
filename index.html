@@ -115,59 +115,70 @@ function drawBead(x, y, r, color) {
   ctx.fill();
   ctx.restore();
 
-  // main body gradient
-  const g = ctx.createRadialGradient(x - r*0.2, y - r*0.2, r*0.05, x, y, r);
-  g.addColorStop(0, adjustColor(color, 55));
-  g.addColorStop(0.45, color);
-  g.addColorStop(1, adjustColor(color, -50));
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI*2);
-  ctx.fillStyle = g;
-  ctx.fill();
+  // gem facets - hexagon divided into triangular faces
+  const sides = 6;
+  const angles = [];
+  for (let i = 0; i < sides; i++) {
+    angles.push((i / sides) * Math.PI * 2 - Math.PI / 6);
+  }
+  const verts = angles.map(a => ({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }));
 
-  // specular highlight top-left
-  const sg = ctx.createRadialGradient(x - r*0.35, y - r*0.38, 0, x - r*0.35, y - r*0.38, r*0.48);
-  sg.addColorStop(0, 'rgba(255,255,255,0.88)');
-  sg.addColorStop(0.35, 'rgba(255,255,255,0.28)');
-  sg.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI*2);
-  ctx.fillStyle = sg;
-  ctx.fill();
+  // face brightness offsets to simulate light from top-left
+  const brightness = [55, 30, -10, -35, -20, 20];
 
-  // bottom-right reflection
-  const rg = ctx.createRadialGradient(x + r*0.3, y + r*0.35, 0, x + r*0.3, y + r*0.35, r*0.5);
-  rg.addColorStop(0, 'rgba(255,255,255,0.22)');
-  rg.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI*2);
-  ctx.fillStyle = rg;
-  ctx.fill();
-
-  // chromatic dispersion arc (prismatic edge scatter)
   ctx.save();
   ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.moveTo(verts[0].x, verts[0].y);
+  for (let i = 1; i < sides; i++) ctx.lineTo(verts[i].x, verts[i].y);
+  ctx.closePath();
   ctx.clip();
-  const dispColors = [
-    'rgba(255,80,80,0.13)',
-    'rgba(255,180,60,0.10)',
-    'rgba(80,220,120,0.10)',
-    'rgba(60,160,255,0.13)',
-    'rgba(180,80,255,0.10)'
-  ];
-  for (let d = 0; d < dispColors.length; d++) {
-    const offset = (d - 2) * r * 0.06;
-    const dg = ctx.createRadialGradient(
-      x - r*0.1 + offset, y + r*0.55, r*0.1,
-      x - r*0.1 + offset, y + r*0.55, r*0.65
-    );
-    dg.addColorStop(0, dispColors[d]);
-    dg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = dg;
-    ctx.fillRect(x - r, y, r*2, r);
+
+  for (let i = 0; i < sides; i++) {
+    const v0 = verts[i];
+    const v1 = verts[(i + 1) % sides];
+    const faceColor = adjustColor(color, brightness[i]);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(v0.x, v0.y);
+    ctx.lineTo(v1.x, v1.y);
+    ctx.closePath();
+    ctx.fillStyle = faceColor;
+    ctx.fill();
+    // subtle face edge
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
   }
+
+  // center radial glow
+  const cg = ctx.createRadialGradient(x - r*0.15, y - r*0.15, 0, x, y, r * 0.9);
+  cg.addColorStop(0, 'rgba(255,255,255,0.18)');
+  cg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = cg;
+  ctx.beginPath();
+  ctx.moveTo(verts[0].x, verts[0].y);
+  for (let i = 1; i < sides; i++) ctx.lineTo(verts[i].x, verts[i].y);
+  ctx.closePath();
+  ctx.fill();
+
   ctx.restore();
+
+  // sharp specular highlight - exaggerated like reference
+  const sp = ctx.createRadialGradient(x - r*0.28, y - r*0.32, 0, x - r*0.28, y - r*0.32, r*0.38);
+  sp.addColorStop(0, 'rgba(255,255,255,0.95)');
+  sp.addColorStop(0.3, 'rgba(255,255,255,0.5)');
+  sp.addColorStop(0.6, 'rgba(255,255,255,0.1)');
+  sp.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = sp;
+  ctx.fill();
+
+  // tiny bright center spark
+  ctx.beginPath();
+  ctx.arc(x - r*0.28, y - r*0.32, r*0.1, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.98)';
+  ctx.fill();
 }
 
 // Matter.js setup

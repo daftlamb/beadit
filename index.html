@@ -14,7 +14,7 @@ canvas { display: block; }
   transform: translateX(-50%);
   display: flex; flex-direction: column; gap: 10px;
   align-items: center;
-  background: rgba(255,255,255,0.75);
+  background: rgba(255,255,255,0.78);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(0,0,0,0.1);
   border-radius: 16px;
@@ -23,30 +23,17 @@ canvas { display: block; }
   z-index: 100;
 }
 #ui input[type=text] {
-  background: rgba(0,0,0,0.06);
-  border: 1px solid rgba(0,0,0,0.15);
-  color: #222; padding: 8px 12px;
-  border-radius: 8px; font-size: 18px;
-  width: 220px; outline: none;
-  text-align: center; letter-spacing: 4px;
+  background: rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.15);
+  color: #222; padding: 8px 12px; border-radius: 8px; font-size: 18px;
+  width: 220px; outline: none; text-align: center; letter-spacing: 4px;
 }
 .row { display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,0.5); font-size: 12px; width: 100%; }
 .row input[type=range] { flex: 1; accent-color: #555; }
 select { background: #fff; color: #222; border: 1px solid rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
-button {
-  background: rgba(0,0,0,0.07);
-  border: 1px solid rgba(0,0,0,0.15);
-  color: #222; padding: 7px 14px;
-  border-radius: 8px; cursor: pointer; font-size: 12px;
-}
+button { background: rgba(0,0,0,0.07); border: 1px solid rgba(0,0,0,0.15); color: #222; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 button:hover { background: rgba(0,0,0,0.14); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-#hint {
-  position: fixed; bottom: 20px; left: 50%;
-  transform: translateX(-50%);
-  color: rgba(0,0,0,0.3); font-size: 12px;
-  pointer-events: none;
-}
+#hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: rgba(0,0,0,0.3); font-size: 12px; pointer-events: none; }
 #font-name { color: rgba(0,0,0,0.35); font-size: 11px; }
 </style>
 </head>
@@ -56,17 +43,17 @@ button:hover { background: rgba(0,0,0,0.14); }
   <input type="text" id="txt" value="BEAD" maxlength="8">
   <div class="row">
     <span>size</span>
-    <input type="range" id="sl-size" min="3" max="24" value="8">
-    <span id="vl-size">8</span>
+    <input type="range" id="sl-size" min="3" max="28" value="9">
+    <span id="vl-size">9</span>
   </div>
   <div class="row">
-    <span>gap</span>
-    <input type="range" id="sl-gap" min="0" max="10" value="3">
-    <span id="vl-gap">3</span>
+    <span>density</span>
+    <input type="range" id="sl-density" min="1" max="10" value="4">
+    <span id="vl-density">4</span>
   </div>
   <div class="row">
     <span>jitter</span>
-    <input type="range" id="sl-jitter" min="0" max="10" value="3">
+    <input type="range" id="sl-jitter" min="0" max="12" value="3">
     <span id="vl-jitter">3</span>
   </div>
   <div class="row">
@@ -90,303 +77,225 @@ button:hover { background: rgba(0,0,0,0.14); }
   <div class="btn-row">
     <button id="btn-reset">reset</button>
     <button id="btn-export">save ↓</button>
-    <label style="cursor:pointer">
-      <button onclick="event.preventDefault();document.getElementById('font-upload').click()">font ↑</button>
-      <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
-    </label>
+    <button id="btn-font">font ↑</button>
+    <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
   </div>
   <div id="font-name"></div>
 </div>
-<div id="hint">click canvas to shuffle colors</div>
+<div id="hint">click canvas to reshuffle</div>
 <script>
 const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-900-normal.woff';
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W, H;
-let font = null;
-let beads = [];
-let seed = 42;
+let W, H, font = null, beads = [], seed = 42;
 
-// ── palettes ──────────────────────────────────────────────
-const PALETTES = {
-  rainbow: (i, n) => `hsl(${i/n*360},55%,58%)`,
-  pastel:  (i, n) => `hsl(${i/n*360},40%,72%)`,
-  mono:    (i, n) => `hsl(220,${15+i/n*25}%,${38+i/n*30}%)`,
-  gold:    (i, n) => `hsl(${38+i/n*18},${70+i/n*20}%,${45+i/n*20}%)`,
-  neon:    (i, n) => `hsl(${i/n*360},80%,55%)`
+// seeded random
+function sr(s) { const x = Math.sin(s+1)*43758.5453; return x - Math.floor(x); }
+
+// palette: each bead gets random hue from palette range
+const HUE_RANGES = {
+  rainbow: () => Math.random() * 360,
+  pastel:  () => Math.random() * 360,
+  mono:    () => 210 + Math.random() * 30,
+  gold:    () => 35 + Math.random() * 25,
+  neon:    () => Math.random() * 360
 };
+const SAT = { rainbow:55, pastel:40, mono:22, gold:75, neon:85 };
+const LIT = { rainbow:58, pastel:72, mono:52, gold:55, neon:55 };
 
-function seededRand(s) {
-  const x = Math.sin(s + 1) * 43758.5453123;
-  return x - Math.floor(x);
+function randColor(palette, i) {
+  const hue = HUE_RANGES[palette]();
+  return `hsl(${hue},${SAT[palette]}%,${LIT[palette]}%)`;
 }
 
-// ── resize ────────────────────────────────────────────────
-function resize() {
-  W = canvas.width  = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-  build();
-}
+// resize
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; build(); }
 window.addEventListener('resize', resize);
 
-// ── skeleton extraction via Zhang-Suen thinning ───────────
-function thin(data, w, h) {
-  // copy to binary grid
-  let grid = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    grid[i] = data[i * 4 + 3] > 128 ? 1 : 0;
-  }
-
-  function idx(x, y) { return y * w + x; }
-  function p(x, y) { return (x<0||y<0||x>=w||y>=h) ? 0 : grid[idx(x,y)]; }
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let pass = 0; pass < 2; pass++) {
-      const toRemove = [];
-      for (let y = 1; y < h-1; y++) {
-        for (let x = 1; x < w-1; x++) {
-          if (!grid[idx(x,y)]) continue;
-          const p2=p(x,y-1), p3=p(x+1,y-1), p4=p(x+1,y),
-                p5=p(x+1,y+1), p6=p(x,y+1), p7=p(x-1,y+1),
-                p8=p(x-1,y), p9=p(x-1,y-1);
-          const A = (p2===0&&p3===1?1:0)+(p3===0&&p4===1?1:0)+
-                    (p4===0&&p5===1?1:0)+(p5===0&&p6===1?1:0)+
-                    (p6===0&&p7===1?1:0)+(p7===0&&p8===1?1:0)+
-                    (p8===0&&p9===1?1:0)+(p9===0&&p2===1?1:0);
-          const B = p2+p3+p4+p5+p6+p7+p8+p9;
-          if (B < 2 || B > 6 || A !== 1) continue;
-          if (pass === 0) {
-            if (p2*p4*p6 !== 0) continue;
-            if (p4*p6*p8 !== 0) continue;
-          } else {
-            if (p2*p4*p8 !== 0) continue;
-            if (p2*p6*p8 !== 0) continue;
-          }
-          toRemove.push(idx(x,y));
-        }
-      }
-      if (toRemove.length) { changed = true; toRemove.forEach(i => { grid[i] = 0; }); }
-    }
-  }
-  return grid;
-}
-
-// ── rasterize text to offscreen canvas ───────────────────
-function rasterizeText(text, targetW, targetH) {
+// rasterize text to offscreen canvas, return ImageData
+function rasterize(text) {
   const ofc = document.createElement('canvas');
-  ofc.width = targetW; ofc.height = targetH;
-  const oCtx = ofc.getContext('2d');
-
-  const chars = text.length || 1;
-  // fit font size so text fills ~80% width and ~60% height
-  let fontSize = Math.min(targetW * 0.8 / chars * 1.4, targetH * 0.6);
-  fontSize = Math.max(fontSize, 40);
+  ofc.width = W; ofc.height = H;
+  const oc = ofc.getContext('2d');
+  const chars = Math.max(text.length, 1);
 
   if (font) {
+    let fontSize = Math.min(W * 0.82 / chars * 1.5, H * 0.62);
     const path = font.getPath(text, 0, 0, fontSize);
     const bb = path.getBoundingBox();
-    const tw = bb.x2 - bb.x1;
-    const th = bb.y2 - bb.y1;
-    // scale to fit
-    const scale = Math.min((targetW * 0.85) / tw, (targetH * 0.65) / th);
-    const scaledSize = fontSize * scale;
-    const path2 = font.getPath(text, 0, 0, scaledSize);
-    const bb2 = path2.getBoundingBox();
-    const ox = (targetW - (bb2.x2 - bb2.x1)) / 2 - bb2.x1;
-    const oy = (targetH - (bb2.y2 - bb2.y1)) / 2 - bb2.y1;
-    const cmds = path2.commands.map(cmd => {
-      const c = Object.assign({}, cmd);
-      if ('x'  in c) c.x  += ox; if ('y'  in c) c.y  += oy;
-      if ('x1' in c) c.x1 += ox; if ('y1' in c) c.y1 += oy;
-      if ('x2' in c) c.x2 += ox; if ('y2' in c) c.y2 += oy;
-      return c;
-    });
-    const p2d = new Path2D(cmds.reduce((s,c) => {
-      if (c.type==='M') return s+`M${c.x},${c.y}`;
-      if (c.type==='L') return s+`L${c.x},${c.y}`;
-      if (c.type==='C') return s+`C${c.x1},${c.y1},${c.x2},${c.y2},${c.x},${c.y}`;
-      if (c.type==='Q') return s+`Q${c.x1},${c.y1},${c.x},${c.y}`;
-      if (c.type==='Z') return s+'Z';
-      return s;
-    }, ''));
-    oCtx.fillStyle = '#fff';
-    oCtx.fill(p2d);
+    const scale = Math.min((W * 0.88) / (bb.x2-bb.x1), (H * 0.65) / (bb.y2-bb.y1));
+    fontSize *= scale;
+    const p2 = font.getPath(text, 0, 0, fontSize);
+    const bb2 = p2.getBoundingBox();
+    const ox = (W-(bb2.x2-bb2.x1))/2 - bb2.x1;
+    const oy = (H-(bb2.y2-bb2.y1))/2 - bb2.y1;
+    const d = p2.commands.reduce((s,c) => {
+      if (c.type==='M') return s+`M${c.x+ox},${c.y+oy}`;
+      if (c.type==='L') return s+`L${c.x+ox},${c.y+oy}`;
+      if (c.type==='C') return s+`C${c.x1+ox},${c.y1+oy},${c.x2+ox},${c.y2+oy},${c.x+ox},${c.y+oy}`;
+      if (c.type==='Q') return s+`Q${c.x1+ox},${c.y1+oy},${c.x+ox},${c.y+oy}`;
+      if (c.type==='Z') return s+'Z'; return s;
+    }, '');
+    oc.fillStyle = '#fff';
+    oc.fill(new Path2D(d));
   } else {
-    const scale = Math.min((targetW * 0.85) / (chars * fontSize * 0.6), (targetH * 0.65) / fontSize);
-    const scaledSize = fontSize * scale;
-    oCtx.font = `900 ${scaledSize}px Arial Black, Arial, sans-serif`;
-    oCtx.textAlign = 'center';
-    oCtx.textBaseline = 'middle';
-    oCtx.fillStyle = '#fff';
-    oCtx.fillText(text, targetW/2, targetH/2);
+    let fs = Math.min(W * 0.75 / chars * 1.4, H * 0.6);
+    oc.font = `900 ${fs}px Arial Black, Arial, sans-serif`;
+    oc.textAlign = 'center'; oc.textBaseline = 'middle';
+    oc.fillStyle = '#fff';
+    oc.fillText(text, W/2, H/2);
   }
-  return oCtx.getImageData(0, 0, targetW, targetH);
+  return oc.getImageData(0, 0, W, H);
 }
 
-// ── build ─────────────────────────────────────────────────
+// extract skeleton points using distance-transform approximation
+// much faster than Zhang-Suen: erode the shape, keep pixels that survive erosion
+function extractSkeleton(imgData, spacing) {
+  const data = imgData.data;
+  const w = imgData.width, h = imgData.height;
+  const r = Math.max(2, Math.round(spacing * 0.35));
+
+  // build binary grid
+  const grid = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) grid[i] = data[i*4+3] > 128 ? 1 : 0;
+
+  // erode: keep pixel only if entire r-radius circle is filled
+  const eroded = new Uint8Array(w * h);
+  for (let y = r; y < h-r; y++) {
+    for (let x = r; x < w-r; x++) {
+      if (!grid[y*w+x]) continue;
+      let ok = true;
+      outer: for (let dy = -r; dy <= r && ok; dy++) {
+        for (let dx = -r; dx <= r && ok; dx++) {
+          if (dx*dx+dy*dy <= r*r && !grid[(y+dy)*w+(x+dx)]) ok = false;
+        }
+      }
+      if (ok) eroded[y*w+x] = 1;
+    }
+  }
+
+  // collect eroded pixels, subsample by spacing
+  const pts = [];
+  const used = new Uint8Array(w * h);
+  const sp = Math.round(spacing);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!eroded[y*w+x] || used[y*w+x]) continue;
+      pts.push({x, y});
+      for (let dy = -sp; dy <= sp; dy++) {
+        for (let dx = -sp; dx <= sp; dx++) {
+          const nx=x+dx, ny=y+dy;
+          if (nx>=0&&ny>=0&&nx<w&&ny<h && dx*dx+dy*dy<=sp*sp) used[ny*w+nx]=1;
+        }
+      }
+    }
+  }
+  return pts;
+}
+
 function build() {
   const text    = document.getElementById('txt').value || 'BEAD';
   const beadR   = parseInt(document.getElementById('sl-size').value);
-  const gap     = parseInt(document.getElementById('sl-gap').value);
+  const density = parseInt(document.getElementById('sl-density').value);
   const jitter  = parseInt(document.getElementById('sl-jitter').value);
   const palette = document.getElementById('sel-palette').value;
   const shape   = document.getElementById('sel-shape').value;
-  const spacing = beadR * 2 + gap;
+  // density slider: 1=sparse(large spacing), 10=dense(small spacing)
+  const spacing = beadR * (2.5 - density * 0.12);
 
-  // rasterize at screen size
-  const imgData = rasterizeText(text, W, H);
+  const imgData = rasterize(text);
+  const pts = extractSkeleton(imgData, spacing);
 
-  // thin to skeleton
-  const skelGrid = thin(imgData.data, W, H);
-
-  // collect skeleton pixels, subsample by spacing
-  const rawPts = [];
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (skelGrid[y * W + x]) rawPts.push({x, y});
-    }
-  }
-
-  // subsample: keep one point per spacing distance
-  const kept = [];
-  const used = new Uint8Array(W * H);
-  for (const pt of rawPts) {
-    if (used[pt.y * W + pt.x]) continue;
-    kept.push(pt);
-    // mark nearby as used
-    const r = Math.round(spacing);
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const nx = pt.x + dx, ny = pt.y + dy;
-        if (nx >= 0 && ny >= 0 && nx < W && ny < H) {
-          if (dx*dx + dy*dy <= r*r) used[ny * W + nx] = 1;
-        }
-      }
-    }
-  }
-
-  const n = kept.length;
-  beads = kept.map((p, i) => {
-    const r1 = seededRand(seed + i * 3);
-    const r2 = seededRand(seed + i * 3 + 1);
-    const angle = r1 * Math.PI * 2;
-    const dist  = r2 * jitter;
+  const shapes = ['circle','diamond','star','hex','circle','circle'];
+  beads = pts.map((p, i) => {
+    const angle = sr(seed+i*3) * Math.PI * 2;
+    const dist  = sr(seed+i*3+1) * jitter;
+    const rot   = sr(seed+i*7) * Math.PI * 2;
     return {
-      x: p.x + Math.cos(angle) * dist,
-      y: p.y + Math.sin(angle) * dist,
+      x: p.x + Math.cos(angle)*dist,
+      y: p.y + Math.sin(angle)*dist,
       r: beadR,
-      color: PALETTES[palette](i, n),
-      shape: pickShape(shape, i, seed)
+      color: randColor(palette, i),
+      shape: shape === 'mix' ? shapes[Math.floor(sr(seed+i*11)*shapes.length)] : shape,
+      rot
     };
   });
-
   render();
 }
 
-function pickShape(mode, i, s) {
-  if (mode !== 'mix') return mode;
-  const shapes = ['circle', 'diamond', 'star', 'hex', 'circle', 'circle'];
-  return shapes[Math.floor(seededRand(s + i * 7) * shapes.length)];
-}
-
-// ── draw single bead ──────────────────────────────────────
-function drawBead(x, y, r, color, shape) {
+// draw one bead
+function drawBead(x, y, r, color, shape, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (shape === 'star' || shape === 'hex') ctx.rotate(rot);
   ctx.fillStyle = color;
-  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.38)';
   ctx.lineWidth = 0.7;
 
   if (shape === 'circle') {
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI*2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x - r*0.28, y - r*0.3, r*0.25, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-r*0.28,-r*0.3,r*0.25,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,0.62)'; ctx.fill();
 
   } else if (shape === 'diamond') {
     ctx.beginPath();
-    ctx.moveTo(x,       y - r*1.2);
-    ctx.lineTo(x + r,   y);
-    ctx.lineTo(x,       y + r*1.2);
-    ctx.lineTo(x - r,   y);
-    ctx.closePath();
-    ctx.fill(); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y - r*1.2);
-    ctx.lineTo(x + r, y);
-    ctx.lineTo(x, y - r*0.1);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,255,255,0.28)';
-    ctx.fill();
+    ctx.moveTo(0,-r*1.2); ctx.lineTo(r,0); ctx.lineTo(0,r*1.2); ctx.lineTo(-r,0);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-r*1.2); ctx.lineTo(r,0); ctx.lineTo(0,-r*0.1);
+    ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.fill();
 
   } else if (shape === 'star') {
-    const outer = r * 1.1, inner = r * 0.45;
     ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = (i * Math.PI / 5) - Math.PI / 2;
-      const rad = i % 2 === 0 ? outer : inner;
-      if (i === 0) ctx.moveTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
-      else ctx.lineTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
+    for (let i=0;i<10;i++) {
+      const a=(i*Math.PI/5)-Math.PI/2;
+      const rad=i%2===0?r*1.1:r*0.45;
+      if(i===0) ctx.moveTo(Math.cos(a)*rad,Math.sin(a)*rad);
+      else ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);
     }
-    ctx.closePath();
-    ctx.fill(); ctx.stroke();
+    ctx.closePath(); ctx.fill(); ctx.stroke();
 
   } else if (shape === 'hex') {
     ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
-      if (i === 0) ctx.moveTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
-      else ctx.lineTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
+    for (let i=0;i<6;i++) {
+      const a=(i/6)*Math.PI*2-Math.PI/6;
+      if(i===0) ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);
+      else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
     }
-    ctx.closePath();
-    ctx.fill(); ctx.stroke();
+    ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.beginPath();
-    const a0 = -Math.PI/6, a1 = Math.PI/6;
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + Math.cos(a0)*r, y + Math.sin(a0)*r);
-    ctx.lineTo(x + Math.cos(a1)*r, y + Math.sin(a1)*r);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.fill();
+    ctx.moveTo(0,0);
+    ctx.lineTo(Math.cos(-Math.PI/6)*r,Math.sin(-Math.PI/6)*r);
+    ctx.lineTo(Math.cos(Math.PI/6)*r,Math.sin(Math.PI/6)*r);
+    ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fill();
   }
+  ctx.restore();
 }
 
-// ── render ────────────────────────────────────────────────
 function render() {
-  ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#f0ece4';
-  ctx.fillRect(0, 0, W, H);
-  for (const b of beads) drawBead(b.x, b.y, b.r, b.color, b.shape);
+  ctx.fillRect(0,0,W,H);
+  for (const b of beads) drawBead(b.x, b.y, b.r, b.color, b.shape, b.rot);
 }
 
-// ── export ────────────────────────────────────────────────
 function exportPNG() {
-  const link = document.createElement('a');
-  link.download = 'beadit.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  const a = document.createElement('a');
+  a.download = 'beadit.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
 }
 
-// ── events ────────────────────────────────────────────────
+// events
 document.getElementById('txt').addEventListener('input', build);
-['sl-size','sl-gap','sl-jitter'].forEach(id => {
-  document.getElementById(id).addEventListener('input', function() {
-    document.getElementById('vl-'+id.replace('sl-','')).textContent = this.value;
-    build();
+[['sl-size','vl-size'],['sl-density','vl-density'],['sl-jitter','vl-jitter']].forEach(([sid,vid]) => {
+  document.getElementById(sid).addEventListener('input', function() {
+    document.getElementById(vid).textContent = this.value; build();
   });
 });
 document.getElementById('sel-palette').addEventListener('change', build);
 document.getElementById('sel-shape').addEventListener('change', build);
-document.getElementById('btn-reset').addEventListener('click', () => {
-  document.getElementById('txt').value = 'BEAD'; build();
-});
+document.getElementById('btn-reset').addEventListener('click', () => { document.getElementById('txt').value='BEAD'; build(); });
 document.getElementById('btn-export').addEventListener('click', exportPNG);
-canvas.addEventListener('click', () => { seed = Math.floor(Math.random()*9999); build(); });
-
+document.getElementById('btn-font').addEventListener('click', () => document.getElementById('font-upload').click());
 document.getElementById('font-upload').addEventListener('change', function(e) {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -396,13 +305,11 @@ document.getElementById('font-upload').addEventListener('change', function(e) {
   };
   reader.readAsArrayBuffer(file);
 });
+canvas.addEventListener('click', () => { seed = Math.floor(Math.random()*99999); build(); });
 
-// ── init ──────────────────────────────────────────────────
+// init
 resize();
-opentype.load(FONT_URL, function(err, f) {
-  if (err) { console.warn('CDN font failed, using system font'); return; }
-  font = f; build();
-});
+opentype.load(FONT_URL, (err, f) => { if (!err) { font = f; build(); } });
 </script>
 </body>
 </html>

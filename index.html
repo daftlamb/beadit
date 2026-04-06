@@ -7,35 +7,35 @@
 <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #111; overflow: hidden; font-family: sans-serif; }
+body { background: #f5f2ee; overflow: hidden; font-family: sans-serif; }
 canvas { display: block; }
 #ui {
   position: fixed; top: 20px; left: 50%;
   transform: translateX(-50%);
   display: flex; flex-direction: column; gap: 10px;
   align-items: center;
-  background: rgba(30,30,30,0.82);
+  background: rgba(255,255,255,0.82);
   backdrop-filter: blur(14px);
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(0,0,0,0.08);
   border-radius: 16px;
   padding: 16px 20px;
   min-width: 280px;
   z-index: 100;
 }
 #ui input[type=text] {
-  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-  color: #eee; padding: 8px 12px; border-radius: 8px; font-size: 18px;
+  background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.12);
+  color: #333; padding: 8px 12px; border-radius: 8px; font-size: 18px;
   width: 220px; outline: none; text-align: center; letter-spacing: 4px;
 }
-.row { display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.45); font-size: 12px; width: 100%; }
-.row input[type=range] { flex: 1; accent-color: #aaa; }
-select { background: #222; color: #eee; border: 1px solid rgba(255,255,255,0.18); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
-button { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #eee; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
-button:hover { background: rgba(255,255,255,0.16); }
+.row { display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,0.4); font-size: 12px; width: 100%; }
+.row input[type=range] { flex: 1; accent-color: #888; }
+select { background: #fff; color: #333; border: 1px solid rgba(0,0,0,0.15); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+button { background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.12); color: #333; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+button:hover { background: rgba(0,0,0,0.1); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-#hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.2); font-size: 12px; pointer-events: none; }
-#font-name { color: rgba(255,255,255,0.3); font-size: 11px; }
-#warn { color: #e67e22; font-size: 11px; display: none; }
+#hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: rgba(0,0,0,0.22); font-size: 12px; pointer-events: none; }
+#font-name { color: rgba(0,0,0,0.3); font-size: 11px; }
+#warn { color: #c0392b; font-size: 11px; display: none; }
 </style>
 </head>
 <body>
@@ -60,43 +60,47 @@ button:hover { background: rgba(255,255,255,0.16); }
   <div class="row">
     <span>palette</span>
     <select id="sel-palette">
-      <option value="marble">marble</option>
-      <option value="ruby">ruby</option>
-      <option value="jade">jade</option>
-      <option value="amber">amber</option>
-      <option value="galaxy">galaxy</option>
+      <option value="candy">candy</option>
       <option value="crystal">crystal</option>
+      <option value="rose">rose</option>
+      <option value="mint">mint</option>
+      <option value="sky">sky</option>
+      <option value="mono">mono</option>
     </select>
-    <span>physics</span>
-    <select id="sel-phys">
-      <option value="on">on</option>
-      <option value="off">off</option>
+    <span>shape</span>
+    <select id="sel-shape">
+      <option value="mix">mix</option>
+      <option value="diamond">diamond</option>
+      <option value="emerald">emerald</option>
+      <option value="heart">heart</option>
+      <option value="round">round</option>
     </select>
   </div>
   <div class="btn-row">
     <button id="btn-reset">reset</button>
+    <button id="btn-phys">physics ●</button>
     <button id="btn-export">save</button>
     <button id="btn-font">font</button>
     <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
   </div>
-  <div id="warn">⚠ too many beads — increase size or lower density</div>
+  <div id="warn">⚠ too many gems — increase size or lower density</div>
   <div id="font-name"></div>
 </div>
-<div id="hint">click to shake · tilt device to roll</div>
+<div id="hint">click to shake · tilt to roll</div>
 <script>
 const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-900-normal.woff';
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W, H, font = null, seed = 42, animId = null;
+let W, H, font = null, seed = 42, animId = null, physicsOn = true;
 
-// ── marble color palettes ─────────────────────────────────
+// low-sat candy/crystal palettes
 const PALETTES = {
-  marble:  () => { const h=[0,30,200,120,280,50][Math.floor(Math.random()*6)]; return {h,h2:h+40,s:65,l:52}; },
-  ruby:    () => { const h=340+Math.random()*30; return {h,h2:h+20,s:80,l:48}; },
-  jade:    () => { const h=130+Math.random()*40; return {h,h2:h+30,s:60,l:42}; },
-  amber:   () => { const h=30+Math.random()*20; return {h,h2:h+25,s:85,l:50}; },
-  galaxy:  () => { const h=220+Math.random()*80; return {h,h2:h+60,s:75,l:45}; },
-  crystal: () => { const h=Math.random()*360; return {h,h2:h+50,s:55,l:65}; }
+  candy:   () => { const h=[0,30,60,180,220,280,320][Math.floor(Math.random()*7)]; return {h, s:38+Math.random()*18, l:68+Math.random()*14}; },
+  crystal: () => { const h=Math.random()*360; return {h, s:20+Math.random()*20, l:75+Math.random()*12}; },
+  rose:    () => { const h=330+Math.random()*40; return {h, s:35+Math.random()*20, l:68+Math.random()*14}; },
+  mint:    () => { const h=150+Math.random()*40; return {h, s:30+Math.random()*20, l:68+Math.random()*14}; },
+  sky:     () => { const h=190+Math.random()*50; return {h, s:35+Math.random()*20, l:68+Math.random()*14}; },
+  mono:    () => { const h=220; return {h, s:10+Math.random()*15, l:65+Math.random()*20}; }
 };
 
 function sr(s) { const x=Math.sin(s+1)*43758.5453; return x-Math.floor(x); }
@@ -104,7 +108,6 @@ function sr(s) { const x=Math.sin(s+1)*43758.5453; return x-Math.floor(x); }
 function resize() { W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; rebuild(); }
 window.addEventListener('resize', resize);
 
-// ── rasterize ─────────────────────────────────────────────
 function rasterize(text) {
   const ofc=document.createElement('canvas'); ofc.width=W; ofc.height=H;
   const oc=ofc.getContext('2d');
@@ -136,7 +139,6 @@ function rasterize(text) {
   return oc.getImageData(0,0,W,H);
 }
 
-// ── Zhang-Suen skeleton SCALE=2 ───────────────────────────
 function extractSkeleton(imgData, spacing) {
   const SW=imgData.width,SH=imgData.height,SC=2;
   const w=Math.ceil(SW/SC),h=Math.ceil(SH/SC);
@@ -183,76 +185,57 @@ function extractSkeleton(imgData, spacing) {
   return pts;
 }
 
-// ── beads & physics ───────────────────────────────────────
-let beads = [];
-let gx = 0, gy = 0.35;
-
-window.addEventListener('devicemotion', e => {
-  const a = e.accelerationIncludingGravity;
-  if (!a) return;
-  gx = (a.x||0) * 0.045;
-  gy = -(a.y||0) * 0.045;
+let beads=[];
+let gx=0,gy=0.32;
+window.addEventListener('devicemotion',e=>{
+  const a=e.accelerationIncludingGravity; if(!a) return;
+  gx=(a.x||0)*0.04; gy=-(a.y||0)*0.04;
 });
 
 function rebuild() {
-  if (animId) { cancelAnimationFrame(animId); animId=null; }
+  if(animId){cancelAnimationFrame(animId);animId=null;}
   const text    = document.getElementById('txt').value||'BEAD';
   const beadR   = parseInt(document.getElementById('sl-size').value);
   const density = parseInt(document.getElementById('sl-density').value);
   const jitter  = parseInt(document.getElementById('sl-jitter').value);
   const palette = document.getElementById('sel-palette').value;
+  const shape   = document.getElementById('sel-shape').value;
   const spacing = Math.max(beadR*2, beadR*(3.0-density*0.18));
-
   const imgData = rasterize(text);
   const pts = extractSkeleton(imgData, spacing);
-
-  document.getElementById('warn').style.display = pts.length>300 ? 'block' : 'none';
-
-  beads = pts.map((p,i) => {
-    const angle = sr(seed+i*3)*Math.PI*2;
-    const dist  = sr(seed+i*3+1)*jitter;
-    const col   = PALETTES[palette]();
-    // random swirl angle for marble pattern
-    const swirl = sr(seed+i*13)*Math.PI*2;
-    return {
-      x: p.x+Math.cos(angle)*dist,
-      y: p.y+Math.sin(angle)*dist,
-      ox: p.x, oy: p.y,
-      vx: 0, vy: 0,
-      r: beadR,
-      h: col.h, h2: col.h2, s: col.s, l: col.l,
-      swirl
-    };
+  document.getElementById('warn').style.display=pts.length>300?'block':'none';
+  const shapes=['diamond','emerald','heart','round','diamond','emerald'];
+  beads=pts.map((p,i)=>{
+    const angle=sr(seed+i*3)*Math.PI*2;
+    const dist=sr(seed+i*3+1)*jitter;
+    const rot=sr(seed+i*7)*Math.PI*2;
+    const col=PALETTES[palette]();
+    const sh=shape==='mix'?shapes[Math.floor(sr(seed+i*11)*shapes.length)]:shape;
+    return {x:p.x+Math.cos(angle)*dist, y:p.y+Math.sin(angle)*dist,
+            ox:p.x, oy:p.y, vx:0, vy:0, r:beadR, h:col.h, s:col.s, l:col.l, rot, shape:sh};
   });
-
-  const physOn = document.getElementById('sel-phys').value === 'on';
-  if (physOn) startPhysics(); else render();
+  if(physicsOn) startPhysics(); else render();
 }
 
 function startPhysics() {
-  if (animId) cancelAnimationFrame(animId);
-  function tick() {
-    const damp=0.80, rest=0.010, bounce=0.42;
-    for (const b of beads) {
-      b.vx += gx + (b.ox-b.x)*rest;
-      b.vy += gy + (b.oy-b.y)*rest;
-      b.vx *= damp; b.vy *= damp;
-      b.x += b.vx; b.y += b.vy;
+  if(animId) cancelAnimationFrame(animId);
+  function tick(){
+    const damp=0.80,rest=0.010,bounce=0.42;
+    for(const b of beads){
+      b.vx+=gx+(b.ox-b.x)*rest; b.vy+=gy+(b.oy-b.y)*rest;
+      b.vx*=damp; b.vy*=damp; b.x+=b.vx; b.y+=b.vy;
       if(b.x-b.r<0){b.x=b.r;b.vx*=-bounce;}
       if(b.x+b.r>W){b.x=W-b.r;b.vx*=-bounce;}
       if(b.y-b.r<0){b.y=b.r;b.vy*=-bounce;}
       if(b.y+b.r>H){b.y=H-b.r;b.vy*=-bounce;}
     }
-    // bead-bead repulsion
     for(let i=0;i<beads.length;i++) for(let j=i+1;j<beads.length;j++){
       const a=beads[i],b=beads[j];
-      const dx=b.x-a.x,dy=b.y-a.y;
-      const minD=(a.r+b.r)*0.92;
+      const dx=b.x-a.x,dy=b.y-a.y,minD=(a.r+b.r)*0.9;
       const d2=dx*dx+dy*dy;
       if(d2<minD*minD&&d2>0.001){
         const d=Math.sqrt(d2),push=(minD-d)*0.22/d;
-        a.vx-=dx*push;a.vy-=dy*push;
-        b.vx+=dx*push;b.vy+=dy*push;
+        a.vx-=dx*push;a.vy-=dy*push;b.vx+=dx*push;b.vy+=dy*push;
       }
     }
     render();
@@ -261,114 +244,176 @@ function startPhysics() {
   animId=requestAnimationFrame(tick);
 }
 
-// ── marble sphere render ──────────────────────────────────
-function drawMarble(x, y, r, b) {
-  // drop shadow on floor
-  const shad = ctx.createRadialGradient(x+r*0.18, y+r*1.1, 0, x+r*0.18, y+r*1.1, r*1.0);
-  shad.addColorStop(0,'rgba(0,0,0,0.55)');
-  shad.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.beginPath(); ctx.ellipse(x+r*0.12, y+r*1.08, r*0.9, r*0.25, 0, 0, Math.PI*2);
-  ctx.fillStyle=shad; ctx.fill();
+// ── gem face helper ───────────────────────────────────────
+function faceLightness(nx, ny, l) {
+  // top light at (0,-1), brighter faces facing up
+  const dot = -ny; // dot with (0,-1)
+  return Math.max(0, Math.min(100, l + dot * 28));
+}
 
-  // base color
-  const base = ctx.createRadialGradient(x-r*0.25, y-r*0.25, r*0.05, x, y, r);
-  base.addColorStop(0, `hsl(${b.h},${b.s}%,${Math.min(100,b.l+22)}%)`);
-  base.addColorStop(0.5, `hsl(${b.h},${b.s}%,${b.l}%)`);
-  base.addColorStop(1,   `hsl(${b.h},${b.s}%,${Math.max(0,b.l-28)}%)`);
-  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-  ctx.fillStyle=base; ctx.fill();
+function drawFace(pts, h, s, l, alpha) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+  ctx.closePath();
+  ctx.fillStyle=`hsla(${h},${s}%,${l}%,${alpha})`;
+  ctx.fill();
+  ctx.strokeStyle=`hsla(${h},${s-10}%,${l-15}%,0.25)`;
+  ctx.lineWidth=0.5; ctx.stroke();
+}
 
-  // marble swirl — inner color band
-  ctx.save();
-  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.clip();
-  const sw = ctx.createLinearGradient(
-    x+Math.cos(b.swirl)*r*0.6, y+Math.sin(b.swirl)*r*0.6,
-    x+Math.cos(b.swirl+Math.PI)*r*0.6, y+Math.sin(b.swirl+Math.PI)*r*0.6
-  );
-  sw.addColorStop(0,   `hsla(${b.h2},${b.s+10}%,${b.l+15}%,0)`);
-  sw.addColorStop(0.35,`hsla(${b.h2},${b.s+10}%,${b.l+15}%,0.55)`);
-  sw.addColorStop(0.5, `hsla(${b.h2},${b.s+10}%,${b.l+20}%,0.7)`);
-  sw.addColorStop(0.65,`hsla(${b.h2},${b.s+10}%,${b.l+15}%,0.55)`);
-  sw.addColorStop(1,   `hsla(${b.h2},${b.s+10}%,${b.l+15}%,0)`);
-  ctx.fillStyle=sw; ctx.fillRect(x-r,y-r,r*2,r*2);
+// ── diamond (brilliant cut) ───────────────────────────────
+function drawDiamond(x,y,r,b) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(b.rot);
+  const h=b.h,s=b.s,l=b.l;
+  // drop shadow
+  ctx.shadowColor='rgba(0,0,0,0.18)'; ctx.shadowBlur=r*0.8; ctx.shadowOffsetY=r*0.4;
+  // table (top flat face)
+  const tw=r*0.55;
+  drawFace([[-tw,-r*0.15],[tw,-r*0.15],[tw*0.7,-r*0.85],[-tw*0.7,-r*0.85]],h,s,faceLightness(0,-1,l),0.92);
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  // upper girdle faces
+  const gpts=[[-tw,-r*0.15],[tw,-r*0.15],[r,r*0.1],[-r,r*0.1]];
+  drawFace(gpts,h,s,faceLightness(0,-0.5,l),0.85);
+  // left upper
+  drawFace([[-r,r*0.1],[-tw,-r*0.15],[-tw*0.7,-r*0.85],[-r*0.5,-r*0.5]],h,s,faceLightness(-1,-0.3,l),0.78);
+  // right upper
+  drawFace([[r,r*0.1],[tw,-r*0.15],[tw*0.7,-r*0.85],[r*0.5,-r*0.5]],h,s,faceLightness(1,-0.3,l),0.65);
+  // lower pavilion faces
+  drawFace([[-r,r*0.1],[0,r*1.25],[r,r*0.1]],h,s,faceLightness(0,0.8,l),0.72);
+  drawFace([[-r,r*0.1],[0,r*1.25],[-r*0.5,r*0.7]],h,s,faceLightness(-0.7,0.7,l),0.82);
+  drawFace([[r,r*0.1],[0,r*1.25],[r*0.5,r*0.7]],h,s,faceLightness(0.7,0.7,l),0.60);
+  // specular
+  ctx.beginPath(); ctx.arc(-tw*0.3,-r*0.55,r*0.1,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fill();
   ctx.restore();
+}
 
-  // inner translucency glow
-  const glow = ctx.createRadialGradient(x+r*0.1,y+r*0.15,0,x,y,r*0.9);
-  glow.addColorStop(0,`hsla(${b.h},${b.s-10}%,${b.l+35}%,0.4)`);
-  glow.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-  ctx.fillStyle=glow; ctx.fill();
+// ── emerald cut (stepped rectangle) ──────────────────────
+function drawEmerald(x,y,r,b) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(b.rot);
+  const h=b.h,s=b.s,l=b.l;
+  const W2=r*1.1,H2=r*0.75,ch=r*0.22; // chamfer
+  ctx.shadowColor='rgba(0,0,0,0.16)'; ctx.shadowBlur=r*0.7; ctx.shadowOffsetY=r*0.35;
+  // table
+  const tW=W2*0.6,tH=H2*0.55;
+  drawFace([[-tW,-tH],[tW,-tH],[tW,tH],[-tW,tH]],h,s,faceLightness(0,-1,l),0.92);
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  // top step
+  drawFace([[-tW,-tH],[tW,-tH],[W2-ch,-H2],[-W2+ch,-H2]],h,s,faceLightness(0,-0.8,l),0.80);
+  // bottom step
+  drawFace([[-tW,tH],[tW,tH],[W2-ch,H2],[-W2+ch,H2]],h,s,faceLightness(0,0.8,l),0.55);
+  // left step
+  drawFace([[-tW,-tH],[-tW,tH],[-W2+ch,H2],[-W2+ch,-H2]],h,s,faceLightness(-1,0,l),0.75);
+  // right step
+  drawFace([[tW,-tH],[tW,tH],[W2-ch,H2],[W2-ch,-H2]],h,s,faceLightness(1,0,l),0.50);
+  // corner chamfers
+  drawFace([[-W2+ch,-H2],[-tW,-tH],[-W2,-H2+ch]],h,s,l-5,0.65);
+  drawFace([[W2-ch,-H2],[tW,-tH],[W2,-H2+ch]],h,s,l-8,0.60);
+  drawFace([[-W2+ch,H2],[-tW,tH],[-W2,H2-ch]],h,s,l-10,0.55);
+  drawFace([[W2-ch,H2],[tW,tH],[W2,H2-ch]],h,s,l-12,0.50);
+  // specular line
+  ctx.beginPath(); ctx.moveTo(-tW*0.6,-tH*0.7); ctx.lineTo(tW*0.6,-tH*0.7);
+  ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=r*0.08; ctx.stroke();
+  ctx.restore();
+}
 
-  // primary specular — large soft
-  const spec1 = ctx.createRadialGradient(x-r*0.35,y-r*0.38,0,x-r*0.3,y-r*0.3,r*0.55);
-  spec1.addColorStop(0,'rgba(255,255,255,0.95)');
-  spec1.addColorStop(0.35,'rgba(255,255,255,0.45)');
-  spec1.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-  ctx.fillStyle=spec1; ctx.fill();
+// ── heart ─────────────────────────────────────────────────
+function drawHeart(x,y,r,b) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(b.rot);
+  const h=b.h,s=b.s,l=b.l;
+  ctx.shadowColor='rgba(0,0,0,0.16)'; ctx.shadowBlur=r*0.7; ctx.shadowOffsetY=r*0.35;
+  // main heart shape
+  ctx.beginPath();
+  ctx.moveTo(0,r*0.35);
+  ctx.bezierCurveTo(-r*1.1,r*0.35,-r*1.1,-r*0.55,-r*0.55,-r*0.55);
+  ctx.bezierCurveTo(-r*0.1,-r*0.55,0,-r*0.1,0,-r*0.1);
+  ctx.bezierCurveTo(0,-r*0.1,r*0.1,-r*0.55,r*0.55,-r*0.55);
+  ctx.bezierCurveTo(r*1.1,-r*0.55,r*1.1,r*0.35,0,r*0.35);
+  ctx.closePath();
+  const g=ctx.createLinearGradient(0,-r*0.6,0,r*0.4);
+  g.addColorStop(0,`hsl(${h},${s}%,${Math.min(100,l+20)}%)`);
+  g.addColorStop(0.5,`hsl(${h},${s}%,${l}%)`);
+  g.addColorStop(1,`hsl(${h},${s}%,${Math.max(0,l-18)}%)`);
+  ctx.fillStyle=g; ctx.fill();
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  // cleft highlight
+  ctx.beginPath(); ctx.arc(-r*0.28,-r*0.42,r*0.18,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.fill();
+  ctx.beginPath(); ctx.arc(r*0.28,-r*0.42,r*0.12,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.fill();
+  ctx.restore();
+}
 
-  // secondary specular — small sharp
-  ctx.beginPath(); ctx.arc(x-r*0.3,y-r*0.32,r*0.14,0,Math.PI*2);
-  ctx.fillStyle='rgba(255,255,255,0.98)'; ctx.fill();
-
-  // bottom rim light
-  const rim = ctx.createRadialGradient(x+r*0.3,y+r*0.55,0,x+r*0.3,y+r*0.55,r*0.5);
-  rim.addColorStop(0,`hsla(${b.h},${b.s}%,${b.l+30}%,0.35)`);
-  rim.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-  ctx.fillStyle=rim; ctx.fill();
+// ── round brilliant ───────────────────────────────────────
+function drawRound(x,y,r,b) {
+  ctx.save(); ctx.translate(x,y);
+  const h=b.h,s=b.s,l=b.l;
+  const N=16; // facets
+  ctx.shadowColor='rgba(0,0,0,0.16)'; ctx.shadowBlur=r*0.7; ctx.shadowOffsetY=r*0.35;
+  // draw facets
+  for(let i=0;i<N;i++){
+    const a0=(i/N)*Math.PI*2, a1=((i+1)/N)*Math.PI*2, am=(a0+a1)/2;
+    const nx=Math.cos(am), ny=Math.sin(am);
+    const fl=faceLightness(nx,ny,l);
+    const inner=r*0.38;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0)*r,Math.sin(a0)*r);
+    ctx.lineTo(Math.cos(a1)*r,Math.sin(a1)*r);
+    ctx.lineTo(Math.cos(am)*inner,Math.sin(am)*inner);
+    ctx.closePath();
+    ctx.fillStyle=`hsl(${h},${s}%,${fl}%)`;
+    ctx.fill();
+    ctx.strokeStyle=`hsla(${h},${s}%,${fl-15}%,0.3)`;
+    ctx.lineWidth=0.4; ctx.stroke();
+  }
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  // table circle
+  ctx.beginPath(); ctx.arc(0,0,r*0.38,0,Math.PI*2);
+  ctx.fillStyle=`hsl(${h},${s}%,${Math.min(100,l+22)}%)`;
+  ctx.fill();
+  // specular
+  ctx.beginPath(); ctx.arc(-r*0.22,-r*0.22,r*0.14,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.82)'; ctx.fill();
+  ctx.restore();
 }
 
 function render() {
-  // dark background with subtle vignette
-  ctx.fillStyle='#0e0e0e'; ctx.fillRect(0,0,W,H);
-  const vig=ctx.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.85);
-  vig.addColorStop(0,'rgba(0,0,0,0)');
-  vig.addColorStop(1,'rgba(0,0,0,0.55)');
-  ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
-
-  for(const b of beads) drawMarble(b.x,b.y,b.r,b);
+  ctx.fillStyle='#f5f2ee'; ctx.fillRect(0,0,W,H);
+  for(const b of beads){
+    if(b.shape==='diamond')  drawDiamond(b.x,b.y,b.r,b);
+    else if(b.shape==='emerald') drawEmerald(b.x,b.y,b.r,b);
+    else if(b.shape==='heart')   drawHeart(b.x,b.y,b.r,b);
+    else if(b.shape==='round')   drawRound(b.x,b.y,b.r,b);
+  }
 }
 
-function shake() {
-  beads.forEach(b=>{ b.vx+=(Math.random()-0.5)*14; b.vy+=(Math.random()-0.5)*14; });
-}
+function shake() { beads.forEach(b=>{b.vx+=(Math.random()-0.5)*14;b.vy+=(Math.random()-0.5)*14;}); }
+function exportPNG() { const a=document.createElement('a');a.download='beadit.png';a.href=canvas.toDataURL('image/png');a.click(); }
 
-function exportPNG() {
-  const a=document.createElement('a'); a.download='beadit.png';
-  a.href=canvas.toDataURL('image/png'); a.click();
-}
-
-// ── events ────────────────────────────────────────────────
-document.getElementById('txt').addEventListener('input', rebuild);
+document.getElementById('txt').addEventListener('input',rebuild);
 [['sl-size','vl-size'],['sl-density','vl-density'],['sl-jitter','vl-jitter']].forEach(([sid,vid])=>{
-  document.getElementById(sid).addEventListener('input',function(){
-    document.getElementById(vid).textContent=this.value; rebuild();
-  });
+  document.getElementById(sid).addEventListener('input',function(){document.getElementById(vid).textContent=this.value;rebuild();});
 });
-document.getElementById('sel-palette').addEventListener('change', rebuild);
-document.getElementById('sel-phys').addEventListener('change', rebuild);
-document.getElementById('btn-reset').addEventListener('click',()=>{ document.getElementById('txt').value='BEAD'; rebuild(); });
-document.getElementById('btn-export').addEventListener('click', exportPNG);
+document.getElementById('sel-palette').addEventListener('change',rebuild);
+document.getElementById('sel-shape').addEventListener('change',rebuild);
+document.getElementById('btn-reset').addEventListener('click',()=>{document.getElementById('txt').value='BEAD';rebuild();});
+document.getElementById('btn-export').addEventListener('click',exportPNG);
 document.getElementById('btn-font').addEventListener('click',()=>document.getElementById('font-upload').click());
+document.getElementById('btn-phys').addEventListener('click',function(){
+  physicsOn=!physicsOn; this.textContent='physics '+(physicsOn?'●':'○');
+  if(physicsOn) startPhysics(); else {if(animId){cancelAnimationFrame(animId);animId=null;}render();}
+});
 document.getElementById('font-upload').addEventListener('change',function(e){
-  const file=e.target.files[0]; if(!file) return;
+  const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=ev=>{
-    try{font=opentype.parse(ev.target.result);document.getElementById('font-name').textContent=file.name;rebuild();}
-    catch(err){console.error('font parse failed',err);}
-  };
+  reader.onload=ev=>{try{font=opentype.parse(ev.target.result);document.getElementById('font-name').textContent=file.name;rebuild();}catch(err){console.error(err);}};
   reader.readAsArrayBuffer(file);
 });
-canvas.addEventListener('click',()=>{
-  if(document.getElementById('sel-phys').value==='on') shake();
-  else { seed=Math.floor(Math.random()*99999); rebuild(); }
-});
+canvas.addEventListener('click',()=>{ if(physicsOn) shake(); else {seed=Math.floor(Math.random()*99999);rebuild();} });
 
-// ── init ──────────────────────────────────────────────────
 resize();
-opentype.load(FONT_URL,(err,f)=>{ if(!err){font=f;rebuild();} });
+opentype.load(FONT_URL,(err,f)=>{if(!err){font=f;rebuild();}});
 </script>
 </body>
 </html>

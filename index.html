@@ -6,7 +6,7 @@
 <title>Bead It</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #0a0a0a; overflow: hidden; font-family: sans-serif; }
+body { background: #f0ece4; overflow: hidden; font-family: sans-serif; }
 #canvas { display: block; }
 #ui {
   position: fixed; top: 20px; right: 20px;
@@ -102,16 +102,14 @@ function adjustColor(color, amt) {
 }
 
 function drawBead(x, y, r, color) {
-  // shadow
+  // table shadow - soft ellipse below bead
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.4)';
-  ctx.shadowBlur = r * 0.9;
-  ctx.shadowOffsetX = r * 0.12;
-  ctx.shadowOffsetY = r * 0.18;
   ctx.beginPath();
-  ctx.arc(x, y, r * 0.88, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(0,0,0,0.01)';
+  ctx.ellipse(x + r*0.15, y + r*0.85, r*0.7, r*0.22, 0, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.filter = 'blur(' + (r*0.4) + 'px)';
   ctx.fill();
+  ctx.filter = 'none';
   ctx.restore();
 
   // main body gradient
@@ -195,7 +193,7 @@ let rafId = null;
 
 function getBeadPositions(text, beadR, gap) {
   if (!font) return [];
-  const step = beadR * 2 + gap;
+  const step = beadR * 1.85 + gap;
   const fontSize = beadR * 13;
   const path = font.getPath(text, 0, 0, fontSize);
   const bb = path.getBoundingBox();

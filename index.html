@@ -48,8 +48,8 @@ button:hover { background: rgba(0,0,0,0.14); }
   </div>
   <div class="row">
     <span>density</span>
-    <input type="range" id="sl-density" min="1" max="10" value="4">
-    <span id="vl-density">4</span>
+    <input type="range" id="sl-density" min="1" max="10" value="5">
+    <span id="vl-density">5</span>
   </div>
   <div class="row">
     <span>jitter</span>
@@ -76,13 +76,14 @@ button:hover { background: rgba(0,0,0,0.14); }
   </div>
   <div class="btn-row">
     <button id="btn-reset">reset</button>
-    <button id="btn-export">save ↓</button>
-    <button id="btn-font">font ↑</button>
+    <button id="btn-export">save</button>
+    <button id="btn-font">font</button>
     <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
   </div>
   <div id="font-name"></div>
 </div>
 <div id="hint">click canvas to reshuffle</div>
+
 <script>
 const FONT_URL = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-900-normal.woff';
 const canvas = document.getElementById('canvas');
@@ -92,27 +93,24 @@ let W, H, font = null, beads = [], seed = 42;
 // seeded random
 function sr(s) { const x = Math.sin(s+1)*43758.5453; return x - Math.floor(x); }
 
-// palette: each bead gets random hue from palette range
+// per-bead random color from palette
 const HUE_RANGES = {
-  rainbow: () => Math.random() * 360,
-  pastel:  () => Math.random() * 360,
-  mono:    () => 210 + Math.random() * 30,
-  gold:    () => 35 + Math.random() * 25,
-  neon:    () => Math.random() * 360
+  rainbow: () => Math.random()*360,
+  pastel:  () => Math.random()*360,
+  mono:    () => 210 + Math.random()*30,
+  gold:    () => 35 + Math.random()*25,
+  neon:    () => Math.random()*360
 };
 const SAT = { rainbow:55, pastel:40, mono:22, gold:75, neon:85 };
 const LIT = { rainbow:58, pastel:72, mono:52, gold:55, neon:55 };
-
-function randColor(palette, i) {
-  const hue = HUE_RANGES[palette]();
-  return `hsl(${hue},${SAT[palette]}%,${LIT[palette]}%)`;
+function randColor(palette) {
+  return `hsl(${HUE_RANGES[palette]()},${SAT[palette]}%,${LIT[palette]}%)`;
 }
 
-// resize
 function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; build(); }
 window.addEventListener('resize', resize);
 
-// rasterize text to offscreen canvas, return ImageData
+// rasterize text to offscreen canvas
 function rasterize(text) {
   const ofc = document.createElement('canvas');
   ofc.width = W; ofc.height = H;
@@ -123,7 +121,7 @@ function rasterize(text) {
     let fontSize = Math.min(W * 0.82 / chars * 1.5, H * 0.62);
     const path = font.getPath(text, 0, 0, fontSize);
     const bb = path.getBoundingBox();
-    const scale = Math.min((W * 0.88) / (bb.x2-bb.x1), (H * 0.65) / (bb.y2-bb.y1));
+    const scale = Math.min((W*0.88)/(bb.x2-bb.x1), (H*0.65)/(bb.y2-bb.y1));
     fontSize *= scale;
     const p2 = font.getPath(text, 0, 0, fontSize);
     const bb2 = p2.getBoundingBox();
@@ -139,7 +137,7 @@ function rasterize(text) {
     oc.fillStyle = '#fff';
     oc.fill(new Path2D(d));
   } else {
-    let fs = Math.min(W * 0.75 / chars * 1.4, H * 0.6);
+    const fs = Math.min(W*0.75/chars*1.4, H*0.6);
     oc.font = `900 ${fs}px Arial Black, Arial, sans-serif`;
     oc.textAlign = 'center'; oc.textBaseline = 'middle';
     oc.fillStyle = '#fff';
@@ -148,44 +146,61 @@ function rasterize(text) {
   return oc.getImageData(0, 0, W, H);
 }
 
-// extract skeleton points using distance-transform approximation
-// much faster than Zhang-Suen: erode the shape, keep pixels that survive erosion
+// Zhang-Suen thinning at SCALE=2 downsampled resolution
 function extractSkeleton(imgData, spacing) {
+  const SW = imgData.width, SH = imgData.height;
+  const SC = 2;
+  const w = Math.ceil(SW/SC), h = Math.ceil(SH/SC);
   const data = imgData.data;
-  const w = imgData.width, h = imgData.height;
-  const r = Math.max(2, Math.round(spacing * 0.35));
 
-  // build binary grid
-  const grid = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) grid[i] = data[i*4+3] > 128 ? 1 : 0;
-
-  // erode: keep pixel only if entire r-radius circle is filled
-  const eroded = new Uint8Array(w * h);
-  for (let y = r; y < h-r; y++) {
-    for (let x = r; x < w-r; x++) {
-      if (!grid[y*w+x]) continue;
-      let ok = true;
-      outer: for (let dy = -r; dy <= r && ok; dy++) {
-        for (let dx = -r; dx <= r && ok; dx++) {
-          if (dx*dx+dy*dy <= r*r && !grid[(y+dy)*w+(x+dx)]) ok = false;
-        }
-      }
-      if (ok) eroded[y*w+x] = 1;
+  // build downsampled binary grid
+  const grid = new Uint8Array(w*h);
+  for (let y=0; y<h; y++) {
+    for (let x=0; x<w; x++) {
+      const sx = Math.min(x*SC, SW-1), sy = Math.min(y*SC, SH-1);
+      grid[y*w+x] = data[(sy*SW+sx)*4+3] > 128 ? 1 : 0;
     }
   }
 
-  // collect eroded pixels, subsample by spacing
+  // Zhang-Suen thinning
+  function nb(x,y) { return (x<0||y<0||x>=w||y>=h) ? 0 : grid[y*w+x]; }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let pass=0; pass<2; pass++) {
+      const rem = [];
+      for (let y=1; y<h-1; y++) {
+        for (let x=1; x<w-1; x++) {
+          if (!grid[y*w+x]) continue;
+          const p2=nb(x,y-1), p3=nb(x+1,y-1), p4=nb(x+1,y), p5=nb(x+1,y+1),
+                p6=nb(x,y+1), p7=nb(x-1,y+1), p8=nb(x-1,y), p9=nb(x-1,y-1);
+          const B = p2+p3+p4+p5+p6+p7+p8+p9;
+          if (B<2 || B>6) continue;
+          const A = (p2===0&&p3===1?1:0)+(p3===0&&p4===1?1:0)+(p4===0&&p5===1?1:0)+
+                    (p5===0&&p6===1?1:0)+(p6===0&&p7===1?1:0)+(p7===0&&p8===1?1:0)+
+                    (p8===0&&p9===1?1:0)+(p9===0&&p2===1?1:0);
+          if (A!==1) continue;
+          if (pass===0) { if (p2*p4*p6!==0 || p4*p6*p8!==0) continue; }
+          else          { if (p2*p4*p8!==0 || p2*p6*p8!==0) continue; }
+          rem.push(y*w+x);
+        }
+      }
+      if (rem.length) { changed=true; rem.forEach(i => { grid[i]=0; }); }
+    }
+  }
+
+  // collect skeleton pixels, subsample by spacing
+  const sp = Math.max(1, Math.round(spacing/SC));
   const pts = [];
-  const used = new Uint8Array(w * h);
-  const sp = Math.round(spacing);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!eroded[y*w+x] || used[y*w+x]) continue;
-      pts.push({x, y});
-      for (let dy = -sp; dy <= sp; dy++) {
-        for (let dx = -sp; dx <= sp; dx++) {
+  const used = new Uint8Array(w*h);
+  for (let y=0; y<h; y++) {
+    for (let x=0; x<w; x++) {
+      if (!grid[y*w+x] || used[y*w+x]) continue;
+      pts.push({ x: x*SC + SC/2, y: y*SC + SC/2 });
+      for (let dy=-sp; dy<=sp; dy++) {
+        for (let dx=-sp; dx<=sp; dx++) {
           const nx=x+dx, ny=y+dy;
-          if (nx>=0&&ny>=0&&nx<w&&ny<h && dx*dx+dy*dy<=sp*sp) used[ny*w+nx]=1;
+          if (nx>=0&&ny>=0&&nx<w&&ny<h&&dx*dx+dy*dy<=sp*sp) used[ny*w+nx]=1;
         }
       }
     }
@@ -200,72 +215,71 @@ function build() {
   const jitter  = parseInt(document.getElementById('sl-jitter').value);
   const palette = document.getElementById('sel-palette').value;
   const shape   = document.getElementById('sel-shape').value;
-  // density slider: 1=sparse(large spacing), 10=dense(small spacing)
-  const spacing = beadR * (2.5 - density * 0.12);
+  // density 1=sparse, 10=dense
+  const spacing = Math.max(beadR*2, beadR * (3.0 - density*0.18));
 
   const imgData = rasterize(text);
   const pts = extractSkeleton(imgData, spacing);
 
   const shapes = ['circle','diamond','star','hex','circle','circle'];
   beads = pts.map((p, i) => {
-    const angle = sr(seed+i*3) * Math.PI * 2;
-    const dist  = sr(seed+i*3+1) * jitter;
-    const rot   = sr(seed+i*7) * Math.PI * 2;
+    const angle = sr(seed+i*3)*Math.PI*2;
+    const dist  = sr(seed+i*3+1)*jitter;
+    const rot   = sr(seed+i*7)*Math.PI*2;
     return {
       x: p.x + Math.cos(angle)*dist,
       y: p.y + Math.sin(angle)*dist,
       r: beadR,
-      color: randColor(palette, i),
-      shape: shape === 'mix' ? shapes[Math.floor(sr(seed+i*11)*shapes.length)] : shape,
+      color: randColor(palette),
+      shape: shape==='mix' ? shapes[Math.floor(sr(seed+i*11)*shapes.length)] : shape,
       rot
     };
   });
   render();
 }
 
-// draw one bead
 function drawBead(x, y, r, color, shape, rot) {
   ctx.save();
   ctx.translate(x, y);
-  if (shape === 'star' || shape === 'hex') ctx.rotate(rot);
+  if (shape==='star' || shape==='hex') ctx.rotate(rot);
   ctx.fillStyle = color;
   ctx.strokeStyle = 'rgba(255,255,255,0.38)';
   ctx.lineWidth = 0.7;
 
-  if (shape === 'circle') {
+  if (shape==='circle') {
     ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(-r*0.28,-r*0.3,r*0.25,0,Math.PI*2);
     ctx.fillStyle='rgba(255,255,255,0.62)'; ctx.fill();
 
-  } else if (shape === 'diamond') {
+  } else if (shape==='diamond') {
     ctx.beginPath();
     ctx.moveTo(0,-r*1.2); ctx.lineTo(r,0); ctx.lineTo(0,r*1.2); ctx.lineTo(-r,0);
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0,-r*1.2); ctx.lineTo(r,0); ctx.lineTo(0,-r*0.1);
     ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.fill();
 
-  } else if (shape === 'star') {
+  } else if (shape==='star') {
     ctx.beginPath();
-    for (let i=0;i<10;i++) {
-      const a=(i*Math.PI/5)-Math.PI/2;
-      const rad=i%2===0?r*1.1:r*0.45;
-      if(i===0) ctx.moveTo(Math.cos(a)*rad,Math.sin(a)*rad);
-      else ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);
+    for (let i=0; i<10; i++) {
+      const a = (i*Math.PI/5)-Math.PI/2;
+      const rad = i%2===0 ? r*1.1 : r*0.45;
+      if (i===0) ctx.moveTo(Math.cos(a)*rad, Math.sin(a)*rad);
+      else ctx.lineTo(Math.cos(a)*rad, Math.sin(a)*rad);
     }
     ctx.closePath(); ctx.fill(); ctx.stroke();
 
-  } else if (shape === 'hex') {
+  } else if (shape==='hex') {
     ctx.beginPath();
-    for (let i=0;i<6;i++) {
-      const a=(i/6)*Math.PI*2-Math.PI/6;
-      if(i===0) ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);
-      else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
+    for (let i=0; i<6; i++) {
+      const a = (i/6)*Math.PI*2 - Math.PI/6;
+      if (i===0) ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r);
+      else ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
     }
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(0,0);
-    ctx.lineTo(Math.cos(-Math.PI/6)*r,Math.sin(-Math.PI/6)*r);
-    ctx.lineTo(Math.cos(Math.PI/6)*r,Math.sin(Math.PI/6)*r);
+    ctx.lineTo(Math.cos(-Math.PI/6)*r, Math.sin(-Math.PI/6)*r);
+    ctx.lineTo(Math.cos(Math.PI/6)*r, Math.sin(Math.PI/6)*r);
     ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fill();
   }
   ctx.restore();

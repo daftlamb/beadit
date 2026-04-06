@@ -80,10 +80,10 @@ const ctx = canvas.getContext('2d');
 canvas.width = W; canvas.height = H;
 
 const PALETTES = {
-  rainbow: (i, n) => 'hsl(' + (i/n*360) + ',85%,58%)',
-  pastel:  (i, n) => 'hsl(' + (i/n*360) + ',60%,75%)',
-  neon:    (i, n) => 'hsl(' + (i/n*360) + ',100%,55%)',
-  mono:    (i, n) => 'hsl(220,' + (30+i/n*50) + '%,' + (40+i/n*30) + '%)'
+  rainbow: (i, n) => 'hsl(' + (i/n*360) + ',55%,62%)',
+  pastel:  (i, n) => 'hsl(' + (i/n*360) + ',38%,72%)',
+  neon:    (i, n) => 'hsl(' + (i/n*360) + ',70%,58%)',
+  mono:    (i, n) => 'hsl(220,' + (18+i/n*30) + '%,' + (42+i/n*28) + '%)'
 };
 
 function colorToRGB(color) {
@@ -142,6 +142,31 @@ function drawBead(x, y, r, color) {
   ctx.arc(x, y, r, 0, Math.PI*2);
   ctx.fillStyle = rg;
   ctx.fill();
+
+  // chromatic dispersion arc (prismatic edge scatter)
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.clip();
+  const dispColors = [
+    'rgba(255,80,80,0.13)',
+    'rgba(255,180,60,0.10)',
+    'rgba(80,220,120,0.10)',
+    'rgba(60,160,255,0.13)',
+    'rgba(180,80,255,0.10)'
+  ];
+  for (let d = 0; d < dispColors.length; d++) {
+    const offset = (d - 2) * r * 0.06;
+    const dg = ctx.createRadialGradient(
+      x - r*0.1 + offset, y + r*0.55, r*0.1,
+      x - r*0.1 + offset, y + r*0.55, r*0.65
+    );
+    dg.addColorStop(0, dispColors[d]);
+    dg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = dg;
+    ctx.fillRect(x - r, y, r*2, r);
+  }
+  ctx.restore();
 }
 
 // Matter.js setup

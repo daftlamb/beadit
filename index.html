@@ -44,8 +44,8 @@ button:hover { background: rgba(0,0,0,0.14); }
   <input type="text" id="txt" value="BEAD" maxlength="8" placeholder="type here…">
   <div class="row">
     <span>size</span>
-    <input type="range" id="sl-size" min="6" max="32" value="10">
-    <span id="vl-size">10</span>
+    <input type="range" id="sl-size" min="4" max="32" value="8">
+    <span id="vl-size">8</span>
   </div>
   <div class="row">
     <span>gap</span>
@@ -196,7 +196,7 @@ let rafId = null;
 
 function getBeadPositions(text, beadR, gap) {
   if (!font) return [];
-  const step = beadR * 1.62 + gap;
+  const step = beadR * 1.5 + gap;
   const fontSize = beadR * 13;
   const path = font.getPath(text, 0, 0, fontSize);
   const bb = path.getBoundingBox();

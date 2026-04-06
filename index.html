@@ -63,6 +63,11 @@ button:hover { background: rgba(255,255,255,0.2); }
   </div>
   <button id="btn-shake">shake 🫧</button>
   <button id="btn-reset">reset</button>
+  <label style="cursor:pointer">
+    <span style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:7px 14px;border-radius:8px;font-size:12px;display:block;text-align:center">font ↑</span>
+    <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
+  </label>
+  <div id="font-name" style="color:rgba(255,255,255,0.35);font-size:11px;text-align:center"></div>
 </div>
 <div id="hint">click / tap to play · tilt on mobile</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
@@ -303,6 +308,23 @@ window.addEventListener('devicemotion', function(e) {
   const ay = (e.accelerationIncludingGravity && e.accelerationIncludingGravity.y) || 0;
   engine.gravity.x = ax * 0.07;
   engine.gravity.y = -ay * 0.07;
+});
+
+// font upload
+document.getElementById('font-upload').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      font = opentype.parse(ev.target.result);
+      document.getElementById('font-name').textContent = file.name;
+      buildBeads();
+    } catch(err) {
+      console.error('font parse failed', err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
 });
 
 // init
